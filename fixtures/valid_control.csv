@@ -1,0 +1,2 @@
+invoice_id,supplier_id,invoice_date,currency,amount
+INV-002,SUP-7,2026-09-02,USD,99.99

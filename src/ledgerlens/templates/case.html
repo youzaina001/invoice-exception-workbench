@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %} — case {{ case.invoice_ref }}{% endblock %}
+{% block body %}
+<h2>Case {{ case.invoice_ref }} — {{ case.status }}</h2>
+{% if case.resolution.allowed %}
+<form action="/cases/{{ case.case_id }}/resolve" method="post">
+<button type="submit">Resolve case</button>
+</form>
+{% endif %}
+{% if resolve_refused %}
+<p class="error" role="alert">Resolve refused ({{ resolve_refused }}): {{ refusal_guidance }}</p>
+{% endif %}
+{% if case.status == "resolved" %}
+<p>Next action: none, this case is resolved.</p>
+{% elif case.resolution.allowed %}
+<p>Next action: checks pass on the current version, press Resolve case to close it.</p>
+{% else %}
+<p>Next action: {{ next_action }}</p>
+{% endif %}
+<h3>{{ "Passed check" if case.verdict == "pass" else "Failed check" if case.verdict == "fail" else "Check error" }}</h3>
+<p>{{ case.check_id }} — latest verdict: {{ case.verdict }}</p>
+<h3>Core check evidence</h3>
+<p>{{ case.core.message }} ({{ case.core.n_failed }}/{{ case.core.n_total }} failed)</p>
+<h3>Core failure samples</h3>
+{% if case.core.sample_failures %}
+<table>
+<tr><th>invoice_id</th><th>supplier_id</th><th>invoice_date</th><th>currency</th><th>amount_minor</th></tr>
+{% for row in case.core.sample_failures %}
+<tr><td>{{ row.invoice_id }}</td><td>{{ row.supplier_id }}</td><td>{{ row.invoice_date }}</td><td>{{ row.currency }}</td><td>{{ row.amount_minor if row.amount_minor is not none else "missing" }}</td></tr>
+{% endfor %}
+</table>
+{% else %}
+<p>No failure samples recorded for this verdict.</p>
+{% endif %}
+<h3>Row evidence (latest verdict submission)</h3>
+<table>
+<tr><th>invoice_id</th><td>{{ case.row.invoice_id }}</td></tr>
+<tr><th>supplier_id</th><td>{{ case.row.supplier_id }}</td></tr>
+<tr><th>invoice_date</th><td>{{ case.row.invoice_date }}</td></tr>
+<tr><th>currency</th><td>{{ case.row.currency }}</td></tr>
+<tr><th>amount_minor</th><td>{{ case.row.amount_minor if case.row.amount_minor is not none else "missing" }}</td></tr>
+</table>
+<h3>Submission history</h3>
+<table>
+<tr><th>Version</th><th>invoice_id</th><th>supplier_id</th><th>invoice_date</th><th>currency</th><th>amount_minor</th></tr>
+{% for s in case.history.submissions %}
+<tr><td>{{ s.version }}</td><td>{{ s.row.invoice_id }}</td><td>{{ s.row.supplier_id }}</td><td>{{ s.row.invoice_date }}</td><td>{{ s.row.currency }}</td><td>{{ s.row.amount_minor if s.row.amount_minor is not none else "missing" }}</td></tr>
+{% endfor %}
+</table>
+<h3>Verdicts</h3>
+<table>
+<tr><th>Version</th><th>Run</th><th>Status</th></tr>
+{% for v in case.history.verdicts %}
+<tr><td>{{ v.version }}</td><td>{{ v.run_id }}</td><td>{{ v.status }}</td></tr>
+{% endfor %}
+</table>
+<h3>Audit for latest checked version</h3>
+<table>
+<tr><th>Quality report</th><td>{{ case.audit.quality_report }}</td></tr>
+<tr><th>Remediation / shadow review</th><td class="unknown">{{ case.audit.shadow_review }}</td></tr>
+<tr><th>Approval</th><td class="unknown">{{ case.audit.approval }}</td></tr>
+<tr><th>Human decision</th><td class="unknown">{{ case.audit.human_decision }}</td></tr>
+<tr><th>Quarantine</th><td class="unknown">{{ case.audit.quarantine }}</td></tr>
+<tr><th>Rejection</th><td class="unknown">{{ case.audit.rejection }}</td></tr>
+<tr><th>Timeout</th><td class="unknown">{{ case.audit.timeout }}</td></tr>
+</table>
+<h3>Audit history across checked versions</h3>
+{% if case.history.audit %}
+<table>
+<tr><th>Event</th><th>Time</th><th>Run</th></tr>
+{% for event in case.history.audit %}
+<tr><td>{{ event.label }}</td><td>{{ event.occurred_at }}</td><td><details><summary>Run identity</summary>{{ event.run_id }}</details></td></tr>
+{% endfor %}
+</table>
+{% else %}
+<p>Unknown: no readable audit events for this case.</p>
+{% endif %}
+<details>
+<summary>Technical details</summary>
+<p>case_id {{ case.case_id }}, source submission {{ case.submission_id }}, version {{ case.source_version }}, checked submission {{ case.checked_submission_id }}, version {{ case.version }},
+run {{ case.run_id }}, report {{ case.report_id }}</p>
+</details>
+{% endblock %}

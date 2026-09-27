@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block body %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if duplicate %}
+{% if made_current == "true" %}
+<p>Duplicate upload: {{ duplicate_ref }} version {{ duplicate_version }} is already recorded and was restaged as current.</p>
+{% else %}
+<p>Duplicate upload: {{ duplicate_ref }} version {{ duplicate_version }} is already recorded; current staging unchanged.</p>
+{% endif %}
+{% endif %}
+{% if last_run %}<p>Last run {{ last_run }}: {{ last_status }} (no case opened)</p>{% endif %}
+<h2>Ingest supplier CSV</h2>
+<form action="/ingest" method="post" enctype="multipart/form-data">
+<input type="file" name="file" accept=".csv" required>
+<button type="submit">Ingest</button>
+</form>
+<h2>Run checks</h2>
+<form action="/runs" method="post">
+<button type="submit">Run checks on current submission</button>
+</form>
+<h2>Submissions</h2>
+<table>
+<tr><th>Reference</th><th>Version</th><th>File</th><th>Ingested</th></tr>
+{% for s in overview.submissions %}
+<tr><td>{{ s.invoice_ref }}</td><td>{{ s.version }}</td><td>{{ s.filename }}</td><td>{{ s.ingested_at }}</td></tr>
+{% endfor %}
+</table>
+<h2>Cases</h2>
+<table>
+<tr><th>Reference</th><th>Check</th><th>Status</th><th>Opened</th></tr>
+{% for c in overview.cases %}
+<tr><td><a href="/cases/{{ c.id }}">{{ c.invoice_ref }}</a></td><td>{{ c.check_id }}</td><td>{{ c.status }}</td><td>{{ c.created_at }}</td></tr>
+{% endfor %}
+</table>
+{% endblock %}
