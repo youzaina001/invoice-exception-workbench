@@ -65,3 +65,10 @@ def test_failed_verdict_cannot_resolve() -> None:
     object.__setattr__(req, "verdict_status", "fail")
     decision = decide_resolution(req)
     assert (decision.allowed, decision.reason) == (False, "verdict-not-pass")
+
+
+def test_errored_report_is_distinct_from_incomplete_report() -> None:
+    from dataclasses import replace
+
+    decision = decide_resolution(replace(fresh_pass(), verdict_status="error"))
+    assert (decision.allowed, decision.reason) == (False, "errored-report")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -28,6 +30,10 @@ from ledgerlens.settings import Settings
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
+# A single-invoice CSV is tiny; cap the body so one request cannot buffer
+# an unbounded upload into the web process.
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+
 
 def wants_json(request: Request) -> bool:
     return "application/json" in (request.headers.get("accept") or "")
@@ -51,21 +57,50 @@ def _error(request: Request, detail: str, status_code: int) -> Response:
     )
 
 
-def _engines(app: FastAPI) -> tuple[Engine, str, str]:
+def _index_error(
+    request: Request, engine: Engine, detail: str, status_code: int
+) -> Response:
+    return _render(
+        request,
+        "index.html",
+        {
+            "overview": list_overview(engine),
+            "error": detail,
+            "last_run": None,
+            "last_status": None,
+        },
+        {"detail": detail},
+        status_code,
+    )
+
+
+def _engines(app: FastAPI) -> tuple[Engine, str, Engine]:
     settings: Settings = app.state.settings
     if not settings.intake_dsn or not settings.read_dsn or not settings.audit_dsn:
         raise RuntimeError("intake, read, and audit DSNs must all be configured")
-    engine = getattr(app.state, "intake_engine", None)
-    if engine is None:
-        engine = make_engine(settings.intake_dsn)
-        app.state.intake_engine = engine
-    return engine, settings.read_dsn, settings.audit_dsn
+    return app.state.intake_engine, settings.read_dsn, app.state.audit_engine
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    try:
+        yield
+    finally:
+        for engine in (app.state.intake_engine, app.state.audit_engine):
+            if engine is not None:
+                engine.dispose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings or Settings()
-    app = FastAPI(title="LedgerLens")
+    app = FastAPI(title="LedgerLens", lifespan=lifespan)
     app.state.settings = resolved
+    app.state.intake_engine = (
+        make_engine(resolved.intake_dsn) if resolved.intake_dsn else None
+    )
+    app.state.audit_engine = (
+        make_engine(resolved.audit_dsn) if resolved.audit_dsn else None
+    )
 
     @app.get("/")
     def index(request: Request) -> Response:
@@ -86,24 +121,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ingest(request: Request, file: UploadFile) -> Response:
         intake, _, _ = _engines(request.app)
         filename = file.filename or "upload.csv"
-        try:
-            submission = ingest_submission(
-                intake, filename=filename, data=file.file.read()
-            )
-        except ValueError as exc:
-            overview = list_overview(intake)
-            return _render(
+        data = file.file.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            return _index_error(
                 request,
-                "index.html",
-                {
-                    "overview": overview,
-                    "error": str(exc),
-                    "last_run": None,
-                    "last_status": None,
-                },
-                {"detail": str(exc)},
-                status_code=400,
+                intake,
+                f"{filename}: upload exceeds {MAX_UPLOAD_BYTES} bytes",
+                status_code=413,
             )
+        try:
+            submission = ingest_submission(intake, filename=filename, data=data)
+        except ValueError as exc:
+            return _index_error(request, intake, str(exc), status_code=400)
         if wants_json(request):
             return JSONResponse(submission)
         if submission["duplicate"]:
@@ -138,9 +167,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/cases/{case_id}")
     def get_case(request: Request, case_id: str) -> Response:
-        intake, _, audit_dsn = _engines(request.app)
+        intake, _, audit = _engines(request.app)
         try:
-            case = get_case_detail(intake=intake, audit_dsn=audit_dsn, case_id=case_id)
+            case = get_case_detail(intake=intake, audit=audit, case_id=case_id)
         except CaseNotFoundError as exc:
             return _error(request, str(exc), 404)
         refused = request.query_params.get("resolve_refused")
@@ -157,9 +186,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/cases/{case_id}/resolve")
     def resolve(request: Request, case_id: str) -> Response:
-        intake, _, audit_dsn = _engines(request.app)
+        intake, _, audit = _engines(request.app)
         try:
-            outcome = resolve_case(intake=intake, audit_dsn=audit_dsn, case_id=case_id)
+            outcome = resolve_case(intake=intake, audit=audit, case_id=case_id)
         except CaseNotFoundError as exc:
             return _error(request, str(exc), 404)
         if wants_json(request):

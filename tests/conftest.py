@@ -68,7 +68,6 @@ def reset_db(pg_dsns: dict[str, str]) -> Iterator[None]:
 @pytest.fixture()
 def client(pg_dsns: dict[str, str]) -> TestClient:
     settings = Settings(
-        warehouse_dsn=pg_dsns["read"],
         intake_dsn=pg_dsns["intake"],
         read_dsn=pg_dsns["read"],
         audit_dsn=pg_dsns["audit"],

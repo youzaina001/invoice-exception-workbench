@@ -54,16 +54,27 @@
 <tr><td>{{ v.version }}</td><td>{{ v.run_id }}</td><td>{{ v.status }}</td></tr>
 {% endfor %}
 </table>
-<h3>Audit history</h3>
+<h3>Audit for latest checked version</h3>
 <table>
 <tr><th>Quality report</th><td>{{ case.audit.quality_report }}</td></tr>
-<tr><th>Shadow review</th><td class="unknown">{{ case.audit.shadow_review }}</td></tr>
+<tr><th>Remediation / shadow review</th><td class="unknown">{{ case.audit.shadow_review }}</td></tr>
 <tr><th>Approval</th><td class="unknown">{{ case.audit.approval }}</td></tr>
 <tr><th>Human decision</th><td class="unknown">{{ case.audit.human_decision }}</td></tr>
 <tr><th>Quarantine</th><td class="unknown">{{ case.audit.quarantine }}</td></tr>
 <tr><th>Rejection</th><td class="unknown">{{ case.audit.rejection }}</td></tr>
 <tr><th>Timeout</th><td class="unknown">{{ case.audit.timeout }}</td></tr>
 </table>
+<h3>Audit history across checked versions</h3>
+{% if case.history.audit %}
+<table>
+<tr><th>Event</th><th>Time</th><th>Run</th></tr>
+{% for event in case.history.audit %}
+<tr><td>{{ event.label }}</td><td>{{ event.occurred_at }}</td><td><details><summary>Run identity</summary>{{ event.run_id }}</details></td></tr>
+{% endfor %}
+</table>
+{% else %}
+<p>Unknown: no readable audit events for this case.</p>
+{% endif %}
 <details>
 <summary>Technical details</summary>
 <p>case_id {{ case.case_id }}, source submission {{ case.submission_id }}, version {{ case.source_version }}, checked submission {{ case.checked_submission_id }}, version {{ case.version }},

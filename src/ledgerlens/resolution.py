@@ -27,6 +27,8 @@ class ResolutionDecision:
 def decide_resolution(request: ResolutionRequest) -> ResolutionDecision:
     if request.case_status != "open":
         return ResolutionDecision(False, "case-not-open")
+    if request.verdict_status == "error":
+        return ResolutionDecision(False, "errored-report")
     if not request.report_complete:
         return ResolutionDecision(False, "incomplete-report")
     if request.verdict_check_id != request.required_check_id:
@@ -42,6 +44,9 @@ def decide_resolution(request: ResolutionRequest) -> ResolutionDecision:
 
 REFUSAL_GUIDANCE = {
     "case-not-open": "This case is already resolved; no action is needed.",
+    "errored-report": (
+        "The required check errored; inspect its message and rerun checks."
+    ),
     "incomplete-report": (
         "The check report is incomplete or its audit trace is unavailable; "
         "run checks again, then resolve."

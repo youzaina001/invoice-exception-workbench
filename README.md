@@ -58,19 +58,30 @@ Apply Admissions, and row values never enter core audit payloads (pinned by
 A case closes only through an explicit operator Resolve action gated on a
 fresh pass of the required check for the current submission version. Anything
 else refuses with a machine-readable reason (`tests/test_resolution.py` pins
-each one): `case-not-open`, `incomplete-report`, `check-mismatch`,
+each one): `case-not-open`, `errored-report`, `incomplete-report`, `check-mismatch`,
 `stale-version`, `snapshot-mismatch`, `verdict-not-pass`, plus the wiring
 reasons `no-verdict` and `current-missing`.
 
 A resolved case means the configured checks passed for a specific version. It
 is not payment approval. Quarantine success, rejection, and timeout are
-distinct from resolution; M1 never executes those paths, so the case page
-labels them Unknown instead of inferring success.
+distinct from resolution. The case page reads stored core events for its checked
+runs; missing or unreadable evidence displays as `Unknown`. Labels describe the
+latest checked run; the audit history retains events from earlier versions.
+An approval review does not identify shadow versus HITL mode in core `0371013`,
+so it displays “Review recorded (mode Unknown)”. A quarantine copy is reported
+only for a successful `quarantine_nulls` step with a positive row count on the
+staging table. None of these events closes a case or authorizes payment.
+The workbench reads these events; it never executes the Airflow approval/apply path.
 
 ## Limits (M1)
 
 Localhost-only synthetic demo with no login; authentication is required before
-any shared deployment. One invoice per submission. Synchronous flow only.
+any shared deployment. One invoice per submission and one current staging row
+across all invoices. Uploading another invoice displaces the current row; its
+open case retains history but cannot resolve until its latest CSV is restaged
+and checked. This prevents the core table-wide check from mixing invoices.
+Synchronous flow only. Uploads are limited to 5 MiB per CSV; invalid amounts,
+including sub-cent and out-of-range values, are rejected before storage.
 Document AI/OCR, live Airflow HITL, quarantine execution, reconciliation, and
 downstream publication are later milestones and are not scaffolded.
 
@@ -84,16 +95,44 @@ it.
 
 ```bash
 cd invoice-exception-workbench-m1
-uv venv
-VIRTUAL_ENV=.venv uv pip install -e ".[dev]" -e /path/to/airflow-dq-agent
-.venv/bin/python scripts/dev_pg.py   # Postgres on 127.0.0.1:5433, writes .env
-.venv/bin/uvicorn ledgerlens.app:app --host 127.0.0.1 --port 8101
+make setup CORE=/path/to/airflow-dq-agent  # checkout core commit 0371013 first
+make browser-install                    # Chromium for the browser test
+make db                                 # keep running in terminal 1
+# In terminal 2, from this same directory:
+make run                                # 127.0.0.1:8101; optional PORT=8102
 ```
 
-Open `http://127.0.0.1:8101` in a browser.
+Open `http://127.0.0.1:8101` in a browser. `make db` creates a password-protected
+local PostgreSQL cluster and writes generated role credentials to the ignored
+runtime `.env`. Keep the setup-only `.env.setup` separate. Existing clusters
+created before password authentication must be replaced with a fresh demo
+cluster; preserve any evidence you need before doing so.
+
+`make run` fixes the bind address to loopback. `create_app()` is an ASGI factory
+and does not choose a network interface; custom server commands must retain the
+localhost bind. Runtime settings contain only intake, read, and audit DSNs.
+
+### Environment example (placeholders, no secrets)
+
+For an existing PostgreSQL instance, provision the three roles first and set:
+
+```dotenv
+INTAKE_DSN=postgresql+psycopg://wb_intake:REPLACE_WITH_GENERATED_PASSWORD@127.0.0.1:5433/warehouse
+READ_DSN=postgresql+psycopg://dq_read_login:REPLACE_WITH_GENERATED_PASSWORD@127.0.0.1:5433/warehouse
+AUDIT_DSN=postgresql+psycopg://dq_audit_login:REPLACE_WITH_GENERATED_PASSWORD@127.0.0.1:5433/warehouse
+LLM_MODE=stub
+APPLY_MODE=off
+TRACE_POSTGRES=true
+TRACES_DIR=traces
+```
+
+No admin or apply DSN is required by the runtime. `WAREHOUSE_DSN`, `APP_HOST`,
+and `APP_PORT` are not workbench settings. The generated `.env` may retain these
+legacy keys; `make run` sets the bind address and port explicitly.
 
 Failure journey: upload `fixtures/missing_amount.csv`, run checks, open the
-case (failed completeness check, full row values, Unknown audit labels).
+case (failed completeness check, full row values, Unknown labels for absent
+remediation events).
 Success journey: upload `fixtures/corrected_amount.csv` (version 2), run
 checks (pass, case stays open), press Resolve (case closes). `valid_control.csv`
 passes without ever opening a case.
@@ -106,12 +145,20 @@ only when the current evidence permits it.
 ## Verification
 
 ```bash
-.venv/bin/python -m pytest -q        # spins its own embedded Postgres
-.venv/bin/ruff check src tests scripts && .venv/bin/ruff format --check src tests scripts
-.venv/bin/mypy src tests scripts
-.venv/bin/playwright install chromium # once, for tests/test_browser_journey.py
+make check             # real PostgreSQL, browser, lint/format check, strict mypy
+# Or individually: make test; make lint; make typecheck
 ```
 
 The suite covers HTTP journeys over real Postgres plus the installed core, pure
 resolution-rule units, least-privilege and no-leak checks, and one real
 Chromium journey against a live server.
+
+
+If the sandbox blocks the virtualenv's bundled PEM certificate file, use the
+system trust store for the test command:
+`SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt make check` (Linux).
+This does not disable certificate verification. Tests generate isolated database
+credentials and never need the demo's `.env` values.
+
+See [review follow-up](docs/review-follow-up.md) for finding dispositions and
+[PR handoff](docs/pr1-handoff.md) for verification and publishing status.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -90,5 +91,11 @@ def test_core_audit_contains_no_row_values(
     values = [leaf for body in bodies for leaf in _walk(body)]
     texts = [leaf for leaf in values if isinstance(leaf, str)]
     assert not any(any(s in leaf for leaf in texts) for s in SENSITIVE_STRINGS)
-    assert SENSITIVE_INT not in [leaf for leaf in values if isinstance(leaf, int)]
+    numbers = [
+        Decimal(str(leaf))
+        for leaf in values
+        if isinstance(leaf, (int, float, Decimal)) and not isinstance(leaf, bool)
+    ]
+    assert Decimal(SENSITIVE_INT) not in numbers
+    assert Decimal("123.45") not in numbers
     assert not any(leaf in ("12345", "123.45") for leaf in texts)

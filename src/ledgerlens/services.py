@@ -8,16 +8,15 @@ import io
 import json
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, InvalidOperation
-from typing import Any
+from decimal import Decimal, InvalidOperation, localcontext
 from uuid import uuid4
 
+from airflow_dq_agent.contracts.models import AuditEvent
 from airflow_dq_agent.quality.suite import run_quality_suite
-from airflow_dq_agent.traces.repository import PostgresAuditRepository
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine, RowMapping
-from sqlalchemy.exc import SQLAlchemyError
 
+from ledgerlens.audit import audit_labels, read_audit_events
 from ledgerlens.core_integration import AMOUNT_CHECK_ID, ensure_registered
 from ledgerlens.resolution import (
     ResolutionDecision,
@@ -93,17 +92,29 @@ def parse_submission_csv(data: bytes, *, filename: str) -> InvoiceRow:
         amount_minor: int | None = None
     else:
         try:
-            cents = Decimal(raw_amount) * 100
+            amount = Decimal(raw_amount)
         except InvalidOperation as exc:
             raise ValueError(
                 f"{filename}: amount {raw_amount!r} is not decimal"
             ) from exc
-        if not cents.is_finite():
+        if not amount.is_finite():
             raise ValueError(f"{filename}: amount {raw_amount!r} is not finite")
-        if cents != cents.to_integral_value():
+        if amount < 0 or amount > Decimal("92233720368547758.07"):
+            raise ValueError(f"{filename}: amount is outside the supported range")
+        # Reject on scale, not on a rounded product: the default decimal
+        # context would otherwise round long inputs into an accepted value.
+        exponent = amount.as_tuple().exponent
+        if not isinstance(exponent, int) or exponent < -2:
             raise ValueError(
                 f"{filename}: amount {raw_amount!r} has sub-cent precision"
             )
+        with localcontext() as ctx:
+            ctx.prec = max(len(raw_amount), 28) + 2
+            cents = amount * 100
+            if cents != cents.to_integral_value():
+                raise ValueError(
+                    f"{filename}: amount {raw_amount!r} has sub-cent precision"
+                )
         amount_minor = int(cents)
         if amount_minor < 0:
             raise ValueError(f"{filename}: amount must not be negative")
@@ -250,10 +261,7 @@ def ingest_submission(
     invoice_ref = row.invoice_id
     snapshot = snapshot_row(row)
     with engine.begin() as conn:
-        conn.execute(
-            text("SELECT pg_advisory_xact_lock(:key)"),
-            {"key": _STAGING_LOCK_KEY},
-        )
+        _lock_staging(conn)
         existing = (
             conn.execute(
                 text(
@@ -333,19 +341,21 @@ def ingest_submission(
         return _submission_payload(submission_id, invoice_ref, version, False, True)
 
 
-def _current_staged(engine: Engine) -> dict[str, Any] | None:
-    with engine.connect() as conn:
-        row = (
-            conn.execute(
-                text(
-                    "SELECT invoice_ref, submission_id, version, snapshot"
-                    " FROM wb.staging_invoice LIMIT 1"
-                )
-            )
-            .mappings()
-            .first()
-        )
-        return dict(row) if row is not None else None
+def _lock_staging(conn: Connection) -> None:
+    conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _STAGING_LOCK_KEY})
+
+
+def _current_staged(
+    conn: Connection, invoice_ref: str | None = None
+) -> RowMapping | None:
+    query = (
+        "SELECT invoice_ref, submission_id, version, snapshot FROM wb.staging_invoice"
+    )
+    if invoice_ref is not None:
+        query += " WHERE invoice_ref = :ref"
+    return (
+        conn.execute(text(query + " LIMIT 1"), {"ref": invoice_ref}).mappings().first()
+    )
 
 
 def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
@@ -353,11 +363,8 @@ def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
     # ponytail: serialize the singleton staging journey; use per-invoice
     # staging and locks if simultaneous invoice checks become necessary.
     with intake.begin() as conn:
-        conn.execute(
-            text("SELECT pg_advisory_xact_lock(:key)"),
-            {"key": _STAGING_LOCK_KEY},
-        )
-        staged = _current_staged(intake)
+        _lock_staging(conn)
+        staged = _current_staged(conn)
         if staged is None:
             raise NothingStagedError("no submission staged; ingest a CSV first")
         invoice_ref = str(staged["invoice_ref"])
@@ -369,23 +376,7 @@ def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
         if result is None:
             raise CheckMissingError(f"required check {AMOUNT_CHECK_ID} did not run")
         status = result.status.value
-        restaged = (
-            conn.execute(
-                text(
-                    "SELECT invoice_ref, submission_id, version, snapshot"
-                    " FROM wb.staging_invoice LIMIT 1"
-                )
-            )
-            .mappings()
-            .first()
-        )
-        if (
-            restaged is None
-            or str(restaged["invoice_ref"]) != invoice_ref
-            or str(restaged["submission_id"]) != submission_id
-            or int(restaged["version"]) != version
-            or str(restaged["snapshot"]) != snapshot
-        ):
+        if _current_staged(conn) != staged:
             raise StaleStagedError("staging changed during the check run; rerun checks")
         case_row = (
             conn.execute(
@@ -399,7 +390,7 @@ def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
             .mappings()
             .first()
         )
-        if case_row is None and status != "fail":
+        if case_row is None and status == "pass":
             return {
                 "submission_id": submission_id,
                 "invoice_ref": invoice_ref,
@@ -477,7 +468,7 @@ def _row_dict(row: RowMapping) -> dict[str, object]:
 
 
 def get_case_detail(
-    *, intake: Engine, audit_dsn: str, case_id: str
+    *, intake: Engine, audit: Engine, case_id: str
 ) -> dict[str, object]:
     with intake.connect() as conn:
         case = (
@@ -537,17 +528,7 @@ def get_case_detail(
             .mappings()
             .all()
         )
-        current = (
-            conn.execute(
-                text(
-                    "SELECT version, snapshot FROM wb.staging_invoice"
-                    " WHERE invoice_ref = :ref"
-                ),
-                {"ref": str(case["invoice_ref"])},
-            )
-            .mappings()
-            .first()
-        )
+        current = _current_staged(conn, str(case["invoice_ref"]))
         source_version: int = conn.execute(
             text("SELECT version FROM wb.submissions WHERE id = :id"),
             {"id": str(case["source_submission_id"])},
@@ -563,8 +544,9 @@ def get_case_detail(
             .mappings()
             .all()
         )
-    audit_available = _audit_available(verdict, audit_dsn)
-    quality_report = "recorded" if audit_available else "unknown"
+    events = read_audit_events(audit, [str(v["run_id"]) for v in history_verdicts])
+    latest_events = [e for e in events if e.quality_run_id == str(verdict["run_id"])]
+    audit_available = _audit_available(verdict, events)
     decision = _resolution_decision(case, verdict, current, audit_available)
     return {
         "case_id": str(case["id"]),
@@ -586,16 +568,18 @@ def get_case_detail(
             "message": verdict["message"],
             "sample_failures": verdict["sample_failures"],
         },
-        "audit": {
-            "quality_report": quality_report,
-            "shadow_review": "unknown",
-            "approval": "unknown",
-            "human_decision": "unknown",
-            "quarantine": "unknown",
-            "rejection": "unknown",
-            "timeout": "unknown",
-        },
+        "audit": audit_labels(latest_events, audit_available),
         "history": {
+            "audit": [
+                {
+                    "event_id": e.event_id,
+                    "run_id": e.quality_run_id,
+                    "kind": e.kind,
+                    "label": e.kind.replace("_", " ").capitalize(),
+                    "occurred_at": e.occurred_at.isoformat(),
+                }
+                for e in events
+            ],
             "submissions": [
                 {
                     "version": int(h["version"]),
@@ -668,66 +652,38 @@ def list_overview(engine: Engine) -> dict[str, object]:
 
 
 def _refused_after_race(
-    conn: Connection,
-    *,
-    case_id: str,
-    invoice_ref: str,
-    verdict_version: int,
-    verdict_snapshot: str,
+    conn: Connection, *, case_id: str, verdict: RowMapping
 ) -> dict[str, object]:
-    """Explain a lost resolve race by re-reading current state."""
-    status_row = (
+    """Re-read a lost resolve race and use the same gate as the first attempt."""
+    case = (
         conn.execute(
-            text("SELECT status FROM wb.cases WHERE id = :id"),
+            text("SELECT status, invoice_ref FROM wb.cases WHERE id = :id"),
             {"id": case_id},
         )
         .mappings()
         .first()
     )
-    status = str(status_row["status"]) if status_row is not None else "open"
-    if status != "open":
-        reason = "case-not-open"
-    else:
-        current = (
-            conn.execute(
-                text(
-                    "SELECT version, snapshot FROM wb.staging_invoice"
-                    " WHERE invoice_ref = :ref"
-                ),
-                {"ref": invoice_ref},
-            )
-            .mappings()
-            .first()
-        )
-        if current is None:
-            reason = "current-missing"
-        elif int(current["version"]) != verdict_version:
-            reason = "stale-version"
-        elif str(current["snapshot"]) != verdict_snapshot:
-            reason = "snapshot-mismatch"
-        else:
-            reason = "case-not-open"
+    if case is None:
+        raise CaseNotFoundError(f"case {case_id} not found")
+    current = _current_staged(conn, str(case["invoice_ref"]))
+    decision = _resolution_decision(case, verdict, current, True)
     return {
         "case_id": case_id,
-        "status": status,
+        "status": str(case["status"]),
         "resolved": False,
-        "reason": reason,
+        "reason": decision.reason if not decision.allowed else "case-not-open",
     }
 
 
-def _audit_available(verdict: RowMapping | None, audit_dsn: str) -> bool:
+def _audit_available(verdict: RowMapping | None, events: list[AuditEvent]) -> bool:
     if verdict is None or verdict["audit_event_id"] is None:
         return False
-    try:
-        event = PostgresAuditRepository(audit_dsn).get(str(verdict["audit_event_id"]))
-    except (SQLAlchemyError, ValueError):
-        return False
-    return (
-        event is not None
-        and event.event_id == str(verdict["audit_event_id"])
+    return any(
+        event.event_id == str(verdict["audit_event_id"])
         and event.kind == "quality_report"
         and event.quality_run_id == str(verdict["run_id"])
         and event.report_id == str(verdict["report_id"])
+        for event in events
     )
 
 
@@ -753,17 +709,14 @@ def _resolution_decision(
             verdict_status=str(verdict["status"]),
             verdict_check_id=str(verdict["check_id"]),
             required_check_id=AMOUNT_CHECK_ID,
-            report_complete=audit_available and str(verdict["status"]) != "error",
+            report_complete=audit_available,
         )
     )
 
 
-def resolve_case(*, intake: Engine, audit_dsn: str, case_id: str) -> dict[str, object]:
+def resolve_case(*, intake: Engine, audit: Engine, case_id: str) -> dict[str, object]:
     with intake.begin() as conn:
-        conn.execute(
-            text("SELECT pg_advisory_xact_lock(:key)"),
-            {"key": _STAGING_LOCK_KEY},
-        )
+        _lock_staging(conn)
         case = (
             conn.execute(
                 text("SELECT status, invoice_ref FROM wb.cases WHERE id = :id"),
@@ -787,19 +740,10 @@ def resolve_case(*, intake: Engine, audit_dsn: str, case_id: str) -> dict[str, o
             .mappings()
             .first()
         )
-        current = (
-            conn.execute(
-                text(
-                    "SELECT version, snapshot FROM wb.staging_invoice"
-                    " WHERE invoice_ref = :ref"
-                ),
-                {"ref": str(case["invoice_ref"])},
-            )
-            .mappings()
-            .first()
-        )
+        current = _current_staged(conn, str(case["invoice_ref"]))
+        events = read_audit_events(audit, [str(verdict["run_id"])]) if verdict else []
         decision = _resolution_decision(
-            case, verdict, current, _audit_available(verdict, audit_dsn)
+            case, verdict, current, _audit_available(verdict, events)
         )
         if not decision.allowed:
             return {
@@ -830,9 +774,7 @@ def resolve_case(*, intake: Engine, audit_dsn: str, case_id: str) -> dict[str, o
             return _refused_after_race(
                 conn,
                 case_id=case_id,
-                invoice_ref=str(case["invoice_ref"]),
-                verdict_version=int(verdict["version"]),
-                verdict_snapshot=str(verdict["snapshot"]),
+                verdict=verdict,
             )
         return {
             "case_id": case_id,

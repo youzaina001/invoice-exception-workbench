@@ -92,20 +92,39 @@ def setup_database(admin_dsn: str) -> IntakeCredentials:
     password = secrets.token_hex(16)
     admin = make_engine(admin_dsn)
     with admin.begin() as connection:
-        connection.execute(
-            text(
-                f"""DO $intake$ BEGIN
-              IF NOT EXISTS (SELECT 1 FROM pg_roles
-                WHERE rolname = '{INTAKE_LOGIN}') THEN
-                CREATE ROLE {INTAKE_LOGIN} LOGIN PASSWORD '{password}' INHERIT;
-              ELSE
-                ALTER ROLE {INTAKE_LOGIN} WITH LOGIN PASSWORD '{password}';
-              END IF;
-            END $intake$;"""
+        exists = connection.execute(
+            text("SELECT 1 FROM pg_roles WHERE rolname = :login"),
+            {"login": INTAKE_LOGIN},
+        ).first()
+        # Quote the role name and password server-side: role DDL cannot take
+        # bind parameters, so the values are never spliced in raw.
+        quoted = (
+            connection.execute(
+                text(
+                    "SELECT quote_ident(:name) AS ident,"
+                    " quote_literal(:password) AS literal"
+                ),
+                {"name": INTAKE_LOGIN, "password": password},
             )
+            .mappings()
+            .one()
         )
+        if exists is None:
+            connection.execute(
+                text(
+                    f"CREATE ROLE {quoted['ident']} LOGIN"
+                    f" PASSWORD {quoted['literal']} INHERIT"
+                )
+            )
+        else:
+            connection.execute(
+                text(
+                    f"ALTER ROLE {quoted['ident']} WITH LOGIN"
+                    f" PASSWORD {quoted['literal']} INHERIT"
+                )
+            )
         connection.execute(
-            text("CREATE SCHEMA IF NOT EXISTS wb AUTHORIZATION wb_intake")
+            text(f"CREATE SCHEMA IF NOT EXISTS wb AUTHORIZATION {quoted['ident']}")
         )
     intake_dsn = login_dsn(admin_dsn, user=INTAKE_LOGIN, password=password)
     with make_engine(intake_dsn).begin() as connection:

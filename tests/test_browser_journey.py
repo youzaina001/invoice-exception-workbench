@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import time
 from collections.abc import Iterator
@@ -38,14 +39,8 @@ def live_server(
     }
     with open(log, "w", encoding="utf-8") as handle:
         proc = subprocess.Popen(
-            [
-                str(ROOT / ".venv" / "bin" / "uvicorn"),
-                "ledgerlens.app:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(port),
-            ],
+            ["make", "--no-print-directory", "run", f"PORT={port}"],
+            start_new_session=True,
             cwd=ROOT,
             env=env,
             stdout=handle,
@@ -54,6 +49,8 @@ def live_server(
     base = f"http://127.0.0.1:{port}"
     try:
         for _ in range(120):
+            if proc.poll() is not None:
+                raise RuntimeError(f"server exited: {log.read_text()[-2000:]}")
             try:
                 if httpx.get(base, timeout=2).status_code == 200:
                     break
@@ -65,7 +62,8 @@ def live_server(
             )
         yield base
     finally:
-        proc.terminate()
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=30)
 
 
@@ -89,7 +87,7 @@ def test_operator_journey_in_browser(live_server: str) -> None:
             page.get_by_role("button", name="Run checks on current submission").click()
             expect(page.get_by_text("INV-001").first).to_be_visible()
             expect(page.get_by_text("missing").first).to_be_visible()
-            expect(page.get_by_text("unknown").first).to_be_visible()
+            expect(page.get_by_text("Unknown").first).to_be_visible()
             expect(page.get_by_role("button", name="Resolve case")).to_be_hidden()
             expect(
                 page.get_by_role("heading", name="Core failure samples")

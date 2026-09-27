@@ -11,6 +11,8 @@ from airflow_dq_agent.warehouse.db import make_engine
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from ledgerlens.app import MAX_UPLOAD_BYTES
+
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
@@ -61,6 +63,53 @@ def test_duplicate_ingest_and_rerun_keep_single_case(
     assert overview["cases"][0]["status"] == "open"
 
 
+def test_errored_check_opens_case_and_blocks_resolve(
+    client: TestClient,
+    api_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A required check that errors must still open a case with a verdict."""
+    import polars as pl
+    from airflow_dq_agent.quality.suite import run_suite_on_frames
+
+    import ledgerlens.services as services
+
+    _ingest(client, api_headers, "missing_amount.csv")
+    monkeypatch.setattr(
+        services,
+        "run_quality_suite",
+        lambda dsn: run_suite_on_frames(
+            {"staging_invoice": pl.DataFrame({"invoice_ref": ["INV-001"]})}
+        ),
+    )
+    run = _run(client, api_headers)
+    assert run["status"] == "error"
+    assert run["case_id"] is not None
+    case_id = str(run["case_id"])
+    case = client.get(f"/cases/{case_id}", headers=api_headers).json()
+    assert case["verdict"] == "error"
+    assert case["resolution"] == {"allowed": False, "reason": "errored-report"}
+    outcome = client.post(f"/cases/{case_id}/resolve", headers=api_headers).json()
+    assert (outcome["resolved"], outcome["reason"]) == (False, "errored-report")
+    page = client.get(f"/cases/{case_id}")
+    assert "Check error" in page.text
+
+
+def test_oversized_upload_rejected(
+    client: TestClient, api_headers: dict[str, str]
+) -> None:
+    payload = b"invoice_id,supplier_id,invoice_date,currency,amount\n" + b"0" * (
+        MAX_UPLOAD_BYTES + 1
+    )
+    response = client.post(
+        "/ingest",
+        files={"file": ("huge.csv", payload, "text/csv")},
+        headers=api_headers,
+    )
+    assert response.status_code == 413
+    assert client.get("/", headers=api_headers).json()["submissions"] == []
+
+
 def test_errored_run_cannot_resolve(
     client: TestClient, api_headers: dict[str, str], pg_dsns: dict[str, str]
 ) -> None:
@@ -75,7 +124,7 @@ def test_errored_run_cannot_resolve(
     outcome = client.post(
         f"/cases/{failed['case_id']}/resolve", headers=api_headers
     ).json()
-    assert (outcome["resolved"], outcome["reason"]) == (False, "incomplete-report")
+    assert (outcome["resolved"], outcome["reason"]) == (False, "errored-report")
 
 
 def test_missing_audit_event_renders_unknown(
@@ -88,13 +137,13 @@ def test_missing_audit_event_renders_unknown(
         conn.execute(text("DELETE FROM dq.traces"))
     case = client.get(f"/cases/{failed['case_id']}", headers=api_headers).json()
     assert case["audit"] == {
-        "quality_report": "unknown",
-        "shadow_review": "unknown",
-        "approval": "unknown",
-        "human_decision": "unknown",
-        "quarantine": "unknown",
-        "rejection": "unknown",
-        "timeout": "unknown",
+        "quality_report": "Unknown",
+        "shadow_review": "Unknown",
+        "approval": "Unknown",
+        "human_decision": "Unknown",
+        "quarantine": "Unknown",
+        "rejection": "Unknown",
+        "timeout": "Unknown",
     }
 
 
@@ -106,12 +155,12 @@ def test_case_audit_labels_truthful(
     case = client.get(f"/cases/{failed['case_id']}", headers=api_headers).json()
     assert case["audit"] == {
         "quality_report": "recorded",
-        "shadow_review": "unknown",
-        "approval": "unknown",
-        "human_decision": "unknown",
-        "quarantine": "unknown",
-        "rejection": "unknown",
-        "timeout": "unknown",
+        "shadow_review": "Unknown",
+        "approval": "Unknown",
+        "human_decision": "Unknown",
+        "quarantine": "Unknown",
+        "rejection": "Unknown",
+        "timeout": "Unknown",
     }
     assert "quarantine" not in case["status"]
 
@@ -123,6 +172,7 @@ def test_case_audit_labels_truthful(
         "bad_amount.csv",
         "two_rows.csv",
         "subcent_amount.csv",
+        "long_subcent_amount.csv",
         "negative_amount.csv",
         "extra_field.csv",
         "extra_empty_field.csv",
@@ -183,3 +233,18 @@ def test_run_without_case_shows_run_identity_in_html(
     page = client.post("/runs", follow_redirects=True)
     assert page.status_code == 200
     assert re.search(r"Last run ([0-9a-f]{32}): pass", page.text) is not None
+
+
+@pytest.mark.parametrize("amount", ["1e999999", "1e1000000"])
+def test_extreme_amount_rejected_without_arithmetic_overflow(
+    client: TestClient, api_headers: dict[str, str], amount: str
+) -> None:
+    data = (
+        "invoice_id,supplier_id,invoice_date,currency,amount\n"
+        f"INV-EXP,SUP-42,2026-09-01,EUR,{amount}\n"
+    ).encode()
+    response = client.post(
+        "/ingest", files={"file": ("extreme.csv", data)}, headers=api_headers
+    )
+    assert response.status_code == 400
+    assert client.get("/", headers=api_headers).json()["submissions"] == []

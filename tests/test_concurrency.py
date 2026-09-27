@@ -157,7 +157,7 @@ def test_resolve_after_concurrent_upload_refuses_stale_pass(
     sa_event.listen(engine, "after_cursor_execute", _after_execute)
     try:
         outcome = resolve_case(
-            intake=engine, audit_dsn=pg_dsns["audit"], case_id=case_id
+            intake=engine, audit=make_engine(pg_dsns["audit"]), case_id=case_id
         )
     finally:
         sa_event.remove(engine, "after_cursor_execute", _after_execute)
@@ -205,7 +205,9 @@ def test_overlapping_first_checks_preserve_both_run_verdicts(
         sa_event.remove(engine, "after_cursor_execute", overlap)
     assert runs[0]["case_id"] == runs[1]["case_id"]
     case = get_case_detail(
-        intake=engine, audit_dsn=pg_dsns["audit"], case_id=str(runs[0]["case_id"])
+        intake=engine,
+        audit=make_engine(pg_dsns["audit"]),
+        case_id=str(runs[0]["case_id"]),
     )
     history = case["history"]
     assert isinstance(history, dict)
@@ -324,7 +326,7 @@ def test_resolution_keeps_staging_stable_until_commit(
         sa_event.listen(uploader, "before_cursor_execute", before_upload)
         try:
             outcome = resolve_case(
-                intake=engine, audit_dsn=pg_dsns["audit"], case_id=case_id
+                intake=engine, audit=make_engine(pg_dsns["audit"]), case_id=case_id
             )
         finally:
             sa_event.remove(engine, "before_cursor_execute", before_update)
