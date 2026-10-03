@@ -15,3 +15,7 @@ class Settings(BaseSettings):
     audit_dsn: str | None = None
     # Local operator journey stays unsigned. Hosted mode requires a Reviewer.
     hosted: bool = False
+    clerk_jwt_key: str | None = None
+    clerk_issuer: str | None = None
+    clerk_authorized_parties: list[str] = []
+    clerk_publishable_key: str | None = None

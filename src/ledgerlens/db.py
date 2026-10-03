@@ -281,11 +281,15 @@ AS $fn$
 DECLARE
     reviewer text := NULLIF(current_setting('app.reviewer', true), '');
 BEGIN
-    IF reviewer IS NULL OR NOT EXISTS (
-        SELECT 1 FROM wb.demo_attempts
-        WHERE id = target_attempt AND reviewer_id = reviewer
-    ) THEN
-        RAISE EXCEPTION 'attempt not found';
+    PERFORM pg_advisory_xact_lock(
+        hashtextextended('ledgerlens:workspace:' || reviewer, 0));
+    IF reviewer IS NULL
+       OR (SELECT count(*) FROM wb.demo_attempts WHERE reviewer_id = reviewer) <= 5
+       OR target_attempt IS DISTINCT FROM (
+           SELECT id FROM wb.demo_attempts WHERE reviewer_id = reviewer
+           ORDER BY created_at ASC, id ASC LIMIT 1
+       ) THEN
+        RAISE EXCEPTION 'retention not permitted';
     END IF;
     DELETE FROM dq.check_runs
     WHERE attempt_id = target_attempt AND reviewer_id = reviewer;

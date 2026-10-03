@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from conftest import signed_in_reviewer
 from fastapi.testclient import TestClient
 
 from ledgerlens.app import create_app
@@ -23,7 +24,7 @@ def hosted_client(pg_dsns: dict[str, str]) -> TestClient:
         audit_dsn=pg_dsns["audit"],
         hosted=True,
     )
-    return TestClient(create_app(settings))
+    return TestClient(create_app(settings, authenticate=signed_in_reviewer))
 
 
 def _ingest(client: TestClient, headers: dict[str, str], name: str) -> dict[str, Any]:

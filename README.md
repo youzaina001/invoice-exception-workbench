@@ -39,7 +39,7 @@ Permissions:
 | `dq_audit_login` | Append/read `dq.traces`, append `dq.check_runs`; no `wb.*` access |
 | admin (`postgres`/`dq`) | Setup only: schema, roles, grants. Never a runtime credential. |
 
-The workbench never writes to `dq.*`, never manufactures Human Decisions or
+The workbench has no direct table writes to `dq.*`, never manufactures Human Decisions or
 Apply Admissions, and row values never enter core audit payloads (pinned by
 `tests/test_permissions.py`).
 
@@ -162,3 +162,50 @@ credentials and never need the demo's `.env` values.
 
 See [review follow-up](docs/review-follow-up.md) for finding dispositions and
 [PR handoff](docs/pr1-handoff.md) for verification and publishing status.
+
+
+## Hosted invitation-only demo
+
+Local mode remains unsigned (`HOSTED=false`). Hosted mode requires a verified
+Clerk session before every operator action. Set `HOSTED=true`, the existing
+restricted `INTAKE_DSN`, `READ_DSN`, `AUDIT_DSN`, and these public Clerk settings:
+
+- `CLERK_ISSUER`: your exact Clerk Frontend API origin (HTTPS, no trailing slash).
+- `CLERK_JWT_KEY`: that instance's complete JWT **public** key, with real newlines.
+- `CLERK_AUTHORIZED_PARTIES`: JSON list of exact allowed application origins,
+  including scheme and port, such as `["https://your-app.onrender.com"]`.
+- `CLERK_PUBLISHABLE_KEY`: that instance's public `pk_...` key for ClerkJS.
+
+Use Clerk's invitation-only mode. The Maintainer invites Reviewers in Clerk;
+LedgerLens has no invitation or public registration screen. The sign-in page
+loads ClerkJS and disables its sign-up option. Clerk refreshes the browser's
+`__session` cookie; the server independently verifies RS256 signatures, issuer,
+expiry, not-before, subject, session and authorized-party claims on every request.
+Pending sessions are refused. JWT public keys must be updated if Clerk rotates
+the instance key. No Clerk secret key, provider API call, or shared demo password
+is used for server verification. Missing configuration fails closed.
+
+Cookie-authenticated mutations also require an `Origin` in
+`CLERK_AUTHORIZED_PARTIES`; missing or foreign origins are refused. API clients
+may send `Authorization: Bearer <session-token>` instead. `X-Reviewer` has no
+runtime authority; tests explicitly inject the verified-identity boundary.
+See [Clerk's verification guide](https://clerk.com/docs/guides/sessions/manual-jwt-verification)
+and [Clerk's sign-in component](https://clerk.com/docs/js-frontend/reference/components/authentication/sign-in).
+
+After sign-in the browser exposes **Start fresh**, the current empty attempt,
+and links to previous read-only attempts with submissions, cases, check results,
+and audit evidence. Each Reviewer retains at most five attempts. Initialization,
+Start fresh and each mutation use the same PostgreSQL per-Reviewer transaction
+lock. Mutations revalidate their selected attempt while holding it, so an upload,
+check or resolution that resumes after a transition refuses with HTTP 409.
+The existing staging lock still serializes check execution across Reviewers.
+
+Audit retention is a narrow exception to the normal append-only permissions:
+`wb_intake` may execute owner-owned `wb.delete_attempt_audit(text)`, a
+`SECURITY DEFINER` function with fixed search path and no PUBLIC execute grant.
+It locks the Reviewer's workspace and permits only that Reviewer's oldest attempt
+when more than five exist, within the Start fresh transaction. It refuses current,
+retained and foreign attempts. The same transaction removes the attempt's intake
+rows. Runtime roles receive no direct UPDATE/DELETE grant on audit tables;
+`dq_audit` remains append-only. The database owner can inspect every workspace
+and retained historical attempt for maintenance. No hosted deployment is claimed.

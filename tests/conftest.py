@@ -12,6 +12,7 @@ from airflow_dq_agent.adoption import (
     provision_restricted_logins,
 )
 from airflow_dq_agent.warehouse.db import make_engine
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -79,3 +80,8 @@ def client(pg_dsns: dict[str, str]) -> TestClient:
 @pytest.fixture()
 def api_headers() -> dict[str, str]:
     return {"Accept": "application/json"}
+
+
+def signed_in_reviewer(request: Request) -> str | None:
+    """Test-only stand-in for the externally verified Clerk session."""
+    return (request.headers.get("X-Reviewer") or "").strip() or None

@@ -5,6 +5,7 @@ description = "LedgerLens: operator workbench for incomplete supplier invoices"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
+    "PyJWT[crypto]>=2.10,<3",
     "jinja2",
     "uvicorn",
     "psycopg[binary]",

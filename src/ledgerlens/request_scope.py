@@ -36,6 +36,10 @@ def set_attempt(attempt_id: str | None) -> None:
     _attempt.set(attempt_id)
 
 
+def current_reviewer() -> str | None:
+    return _reviewer.get()
+
+
 def current_attempt() -> str | None:
     return _attempt.get()
 

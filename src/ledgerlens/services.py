@@ -18,7 +18,7 @@ from sqlalchemy.engine import Connection, Engine, RowMapping
 
 from ledgerlens.audit import audit_labels, read_audit_events
 from ledgerlens.core_integration import AMOUNT_CHECK_ID, ensure_registered
-from ledgerlens.request_scope import current_attempt, set_attempt
+from ledgerlens.request_scope import current_attempt, current_reviewer, set_attempt
 from ledgerlens.resolution import (
     ResolutionDecision,
     ResolutionRequest,
@@ -52,6 +52,10 @@ class CaseNotFoundError(RuntimeError):
 
 
 class AttemptNotFoundError(RuntimeError):
+    pass
+
+
+class AttemptReadOnlyError(RuntimeError):
     pass
 
 
@@ -363,6 +367,18 @@ def ingest_submission(
 
 
 def _lock_staging(conn: Connection) -> None:
+    reviewer = current_reviewer()
+    if reviewer is not None:
+        _lock_workspace(conn, reviewer)
+        latest = conn.execute(
+            text(
+                "SELECT id FROM wb.demo_attempts WHERE reviewer_id = :r"
+                " ORDER BY created_at DESC, id DESC LIMIT 1"
+            ),
+            {"r": reviewer},
+        ).scalar_one_or_none()
+        if latest != current_attempt():
+            raise AttemptReadOnlyError("attempt-read-only")
     conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _STAGING_LOCK_KEY})
 
 
@@ -589,6 +605,8 @@ def get_case_detail(
     latest_events = [e for e in events if e.quality_run_id == str(verdict["run_id"])]
     audit_available = _audit_available(verdict, events)
     decision = _resolution_decision(case, verdict, current, audit_available)
+    if current_attempt() is not None and case["attempt_id"] != current_attempt():
+        decision = ResolutionDecision(False, "attempt-read-only")
     return {
         "case_id": str(case["id"]),
         "invoice_ref": str(case["invoice_ref"]),
@@ -646,9 +664,17 @@ def get_case_detail(
     }
 
 
+def _lock_workspace(conn: Connection, reviewer_id: str) -> None:
+    conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:reviewer, 0))"),
+        {"reviewer": "ledgerlens:workspace:" + reviewer_id},
+    )
+
+
 def ensure_demo_workspace(engine: Engine, reviewer_id: str) -> dict[str, str]:
     """Create this Reviewer's Demo Workspace and first empty Demo Attempt."""
     with engine.begin() as conn:
+        _lock_workspace(conn, reviewer_id)
         existing = (
             conn.execute(
                 text("SELECT id FROM wb.demo_workspaces WHERE reviewer_id = :r"),
@@ -683,7 +709,8 @@ def ensure_demo_workspace(engine: Engine, reviewer_id: str) -> dict[str, str]:
             conn.execute(
                 text(
                     "INSERT INTO wb.demo_attempts"
-                    " (id, workspace_id, reviewer_id) VALUES (:id, :w, :r)"
+                    " (id, workspace_id, reviewer_id, created_at)"
+                    " VALUES (:id, :w, :r, clock_timestamp())"
                 ),
                 {"id": attempt_id, "w": workspace_id, "r": reviewer_id},
             )
@@ -720,6 +747,7 @@ def start_fresh_attempt(engine: Engine, reviewer_id: str) -> dict[str, str]:
     # transaction remove the oldest attempt's staging row and nothing else.
     set_attempt(None)
     with engine.begin() as conn:
+        _lock_workspace(conn, reviewer_id)
         workspace = (
             conn.execute(
                 text("SELECT id FROM wb.demo_workspaces WHERE reviewer_id = :r"),
@@ -740,23 +768,36 @@ def start_fresh_attempt(engine: Engine, reviewer_id: str) -> dict[str, str]:
             .mappings()
             .all()
         )
-        if len(attempts) >= _MAX_DEMO_ATTEMPTS:
-            _delete_demo_attempt(conn, str(attempts[0]["id"]))
-            attempts = attempts[1:]
         previous_id = str(attempts[-1]["id"])
         attempt_id = uuid4().hex
         conn.execute(
             text(
                 "INSERT INTO wb.demo_attempts"
-                " (id, workspace_id, reviewer_id) VALUES (:id, :w, :r)"
+                " (id, workspace_id, reviewer_id, created_at)"
+                " VALUES (:id, :w, :r, clock_timestamp())"
             ),
             {"id": attempt_id, "w": workspace_id, "r": reviewer_id},
         )
+        if len(attempts) >= _MAX_DEMO_ATTEMPTS:
+            _delete_demo_attempt(conn, str(attempts[0]["id"]))
     return {
         "workspace_id": workspace_id,
         "attempt_id": attempt_id,
         "previous_attempt_id": previous_id,
     }
+
+
+def list_demo_attempts(engine: Engine) -> list[dict[str, str]]:
+    with engine.connect() as conn:
+        return [
+            {"id": row.id, "created_at": row.created_at.isoformat()}
+            for row in conn.execute(
+                text(
+                    "SELECT id, created_at FROM wb.demo_attempts"
+                    " ORDER BY created_at DESC, id DESC"
+                )
+            )
+        ]
 
 
 def read_demo_attempt(
@@ -774,30 +815,6 @@ def read_demo_attempt(
         )
         if attempt is None:
             raise AttemptNotFoundError(f"attempt {attempt_id} not found")
-        submissions = (
-            conn.execute(
-                text(
-                    "SELECT id, invoice_ref, version, filename, ingested_at"
-                    " FROM wb.submissions WHERE attempt_id = :attempt"
-                    " ORDER BY ingested_at DESC"
-                ),
-                {"attempt": attempt_id},
-            )
-            .mappings()
-            .all()
-        )
-        cases = (
-            conn.execute(
-                text(
-                    "SELECT id, invoice_ref, check_id, status, created_at"
-                    " FROM wb.cases WHERE attempt_id = :attempt"
-                    " ORDER BY created_at DESC"
-                ),
-                {"attempt": attempt_id},
-            )
-            .mappings()
-            .all()
-        )
         verdicts = (
             conn.execute(
                 text(
@@ -826,26 +843,7 @@ def read_demo_attempt(
     return {
         "workspace_id": str(attempt["workspace_id"]),
         "attempt_id": str(attempt["id"]),
-        "submissions": [
-            {
-                "id": row["id"],
-                "invoice_ref": row["invoice_ref"],
-                "version": row["version"],
-                "filename": row["filename"],
-                "ingested_at": row["ingested_at"].isoformat(),
-            }
-            for row in submissions
-        ],
-        "cases": [
-            {
-                "id": row["id"],
-                "invoice_ref": row["invoice_ref"],
-                "check_id": row["check_id"],
-                "status": row["status"],
-                "created_at": row["created_at"].isoformat(),
-            }
-            for row in cases
-        ],
+        **list_overview(intake, attempt_id=attempt_id),
         "check_results": [
             {
                 "case_id": row["case_id"],
