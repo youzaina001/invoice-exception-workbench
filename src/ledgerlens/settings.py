@@ -13,3 +13,5 @@ class Settings(BaseSettings):
     intake_dsn: str | None = None
     read_dsn: str | None = None
     audit_dsn: str | None = None
+    # Local operator journey stays unsigned. Hosted mode requires a Reviewer.
+    hosted: bool = False

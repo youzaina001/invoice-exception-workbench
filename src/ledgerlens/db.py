@@ -74,8 +74,227 @@ CREATE TABLE IF NOT EXISTS wb.case_verdicts (
 );
 ALTER TABLE wb.case_verdicts
     ADD COLUMN IF NOT EXISTS sample_failures JSONB NOT NULL DEFAULT '[]'::jsonb;
+CREATE TABLE IF NOT EXISTS wb.demo_workspaces (
+    id TEXT PRIMARY KEY,
+    reviewer_id TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS wb.demo_attempts (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES wb.demo_workspaces (id),
+    reviewer_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 GRANT USAGE ON SCHEMA wb TO dq_read;
 GRANT SELECT ON wb.staging_invoice TO dq_read;
+ALTER TABLE wb.submissions
+    ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
+    ADD COLUMN IF NOT EXISTS attempt_id TEXT;
+ALTER TABLE wb.submission_rows
+    ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
+    ADD COLUMN IF NOT EXISTS attempt_id TEXT;
+ALTER TABLE wb.staging_invoice
+    ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
+    ADD COLUMN IF NOT EXISTS attempt_id TEXT;
+ALTER TABLE wb.cases
+    ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
+    ADD COLUMN IF NOT EXISTS attempt_id TEXT;
+ALTER TABLE wb.case_verdicts
+    ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
+    ADD COLUMN IF NOT EXISTS attempt_id TEXT;
+"""
+
+# One current staging row per Demo Attempt, and the same invoice reference may
+# exist in another attempt. Local rows leave attempt_id null and keep the
+# historical one-row-per-reference rule.
+SCOPED_DDL = """
+ALTER TABLE wb.submissions
+    DROP CONSTRAINT IF EXISTS submissions_invoice_ref_version_key;
+CREATE UNIQUE INDEX IF NOT EXISTS submissions_scope_invoice_version_idx
+    ON wb.submissions (COALESCE(attempt_id, ''), invoice_ref, version);
+DROP INDEX IF EXISTS wb.cases_one_open_per_check_idx;
+CREATE UNIQUE INDEX cases_one_open_per_check_idx
+    ON wb.cases (COALESCE(attempt_id, ''), invoice_ref, check_id)
+    WHERE status = 'open';
+DO $$
+DECLARE
+    pk_name name;
+BEGIN
+    SELECT con.conname INTO pk_name
+    FROM pg_constraint con
+    WHERE con.conrelid = 'wb.staging_invoice'::regclass
+      AND con.contype = 'p';
+    IF pk_name IS NOT NULL THEN
+        EXECUTE format(
+            'ALTER TABLE wb.staging_invoice DROP CONSTRAINT %I', pk_name
+        );
+    END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS staging_local_invoice_ref_idx
+    ON wb.staging_invoice (invoice_ref) WHERE attempt_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS staging_one_row_per_attempt_idx
+    ON wb.staging_invoice (attempt_id) WHERE attempt_id IS NOT NULL;
+CREATE OR REPLACE FUNCTION wb.stamp_hosted_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.reviewer_id IS NULL THEN
+        NEW.reviewer_id := NULLIF(current_setting('app.reviewer', true), '');
+    END IF;
+    IF NEW.attempt_id IS NULL THEN
+        NEW.attempt_id := NULLIF(current_setting('app.attempt', true), '');
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE OR REPLACE FUNCTION wb.stamp_reviewer()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.reviewer_id IS NULL THEN
+        NEW.reviewer_id := NULLIF(current_setting('app.reviewer', true), '');
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DO $$
+DECLARE
+    target text;
+    stamp text;
+    using_expr text;
+BEGIN
+    FOREACH target IN ARRAY ARRAY[
+        'submissions',
+        'submission_rows',
+        'staging_invoice',
+        'cases',
+        'case_verdicts',
+        'demo_workspaces',
+        'demo_attempts'
+    ]
+    LOOP
+        IF target IN ('demo_workspaces', 'demo_attempts') THEN
+            stamp := 'wb.stamp_reviewer()';
+        ELSE
+            stamp := 'wb.stamp_hosted_scope()';
+        END IF;
+        IF target = 'staging_invoice' THEN
+            -- The quality suite reads every visible staging row. When this
+            -- request names a Demo Attempt, hide the other attempts' rows.
+            using_expr := $policy$
+                (reviewer_id IS NULL
+                AND current_setting('app.hosted', true) IS DISTINCT FROM 'true')
+                OR (reviewer_id = current_setting('app.reviewer', true)
+                AND (NULLIF(current_setting('app.attempt', true), '') IS NULL
+                OR attempt_id = NULLIF(current_setting('app.attempt', true), '')))
+            $policy$;
+        ELSE
+            using_expr :=
+                '(reviewer_id IS NULL AND current_setting(''app.hosted'', true) '
+                'IS DISTINCT FROM ''true'') '
+                'OR reviewer_id = current_setting(''app.reviewer'', true)';
+        END IF;
+        EXECUTE format(
+            'DROP TRIGGER IF EXISTS stamp_hosted_scope ON wb.%I', target
+        );
+        EXECUTE format(
+            'CREATE TRIGGER stamp_hosted_scope BEFORE INSERT ON wb.%I '
+            'FOR EACH ROW EXECUTE FUNCTION %s',
+            target,
+            stamp
+        );
+        EXECUTE format(
+            'ALTER TABLE wb.%I ENABLE ROW LEVEL SECURITY', target
+        );
+        EXECUTE format(
+            'ALTER TABLE wb.%I FORCE ROW LEVEL SECURITY', target
+        );
+        EXECUTE format(
+            'DROP POLICY IF EXISTS hosted_reviewer ON wb.%I', target
+        );
+        EXECUTE format(
+            'CREATE POLICY hosted_reviewer ON wb.%I USING (%s)',
+            target,
+            using_expr
+        );
+    END LOOP;
+END $$;
+"""
+
+AUDIT_SCOPE_DDL = """
+ALTER TABLE dq.traces
+    ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
+    ADD COLUMN IF NOT EXISTS attempt_id TEXT;
+ALTER TABLE dq.check_runs
+    ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
+    ADD COLUMN IF NOT EXISTS attempt_id TEXT;
+CREATE OR REPLACE FUNCTION dq.stamp_hosted_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.reviewer_id IS NULL THEN
+        NEW.reviewer_id := NULLIF(current_setting('app.reviewer', true), '');
+    END IF;
+    IF NEW.attempt_id IS NULL THEN
+        NEW.attempt_id := NULLIF(current_setting('app.attempt', true), '');
+    END IF;
+    RETURN NEW;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION dq.stamp_hosted_scope() TO dq_audit;
+DO $$
+DECLARE
+    target text;
+BEGIN
+    FOREACH target IN ARRAY ARRAY['traces', 'check_runs']
+    LOOP
+        EXECUTE format(
+            'DROP TRIGGER IF EXISTS stamp_hosted_scope ON dq.%I', target
+        );
+        EXECUTE format(
+            'CREATE TRIGGER stamp_hosted_scope BEFORE INSERT ON dq.%I '
+            'FOR EACH ROW EXECUTE FUNCTION dq.stamp_hosted_scope()',
+            target
+        );
+        EXECUTE format('ALTER TABLE dq.%I ENABLE ROW LEVEL SECURITY', target);
+        EXECUTE format(
+            'DROP POLICY IF EXISTS hosted_reviewer ON dq.%I', target
+        );
+        EXECUTE format(
+            'CREATE POLICY hosted_reviewer ON dq.%I USING ('
+            '(reviewer_id IS NULL AND current_setting(''app.hosted'', true) '
+            'IS DISTINCT FROM ''true'') '
+            'OR reviewer_id = current_setting(''app.reviewer'', true))',
+            target
+        );
+    END LOOP;
+END $$;
+CREATE OR REPLACE FUNCTION wb.delete_attempt_audit(target_attempt text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, wb, dq
+AS $fn$
+DECLARE
+    reviewer text := NULLIF(current_setting('app.reviewer', true), '');
+BEGIN
+    IF reviewer IS NULL OR NOT EXISTS (
+        SELECT 1 FROM wb.demo_attempts
+        WHERE id = target_attempt AND reviewer_id = reviewer
+    ) THEN
+        RAISE EXCEPTION 'attempt not found';
+    END IF;
+    DELETE FROM dq.check_runs
+    WHERE attempt_id = target_attempt AND reviewer_id = reviewer;
+    DELETE FROM dq.traces
+    WHERE attempt_id = target_attempt AND reviewer_id = reviewer;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION wb.delete_attempt_audit(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION wb.delete_attempt_audit(text) TO wb_intake;
 """
 
 
@@ -129,4 +348,7 @@ def setup_database(admin_dsn: str) -> IntakeCredentials:
     intake_dsn = login_dsn(admin_dsn, user=INTAKE_LOGIN, password=password)
     with make_engine(intake_dsn).begin() as connection:
         connection.execute(text(TABLES_DDL))
+        connection.execute(text(SCOPED_DDL))
+    with admin.begin() as connection:
+        connection.execute(text(AUDIT_SCOPE_DDL))
     return IntakeCredentials(intake_dsn=intake_dsn)

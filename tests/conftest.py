@@ -59,7 +59,8 @@ def reset_db(pg_dsns: dict[str, str]) -> Iterator[None]:
         conn.execute(
             text(
                 "TRUNCATE wb.case_verdicts, wb.cases, wb.submission_rows, "
-                "wb.submissions, wb.staging_invoice, dq.check_runs, dq.traces"
+                "wb.submissions, wb.staging_invoice, wb.demo_attempts, "
+                "wb.demo_workspaces, dq.check_runs, dq.traces"
             )
         )
     yield

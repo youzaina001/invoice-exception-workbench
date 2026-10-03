@@ -18,6 +18,7 @@ from sqlalchemy.engine import Connection, Engine, RowMapping
 
 from ledgerlens.audit import audit_labels, read_audit_events
 from ledgerlens.core_integration import AMOUNT_CHECK_ID, ensure_registered
+from ledgerlens.request_scope import current_attempt, set_attempt
 from ledgerlens.resolution import (
     ResolutionDecision,
     ResolutionRequest,
@@ -47,6 +48,10 @@ class CheckMissingError(RuntimeError):
 
 
 class CaseNotFoundError(RuntimeError):
+    pass
+
+
+class AttemptNotFoundError(RuntimeError):
     pass
 
 
@@ -162,6 +167,12 @@ def _submission_payload(
     }
 
 
+def _attempt_sql(attempt: str | None) -> tuple[str, dict[str, str]]:
+    if attempt is None:
+        return "", {}
+    return " AND attempt_id = :attempt", {"attempt": attempt}
+
+
 def _replace_staging(
     conn: Connection,
     *,
@@ -178,7 +189,14 @@ def _replace_staging(
     """
     # Staging holds exactly the current submission, so the suite verdict
     # can never mix rows from other invoices or versions.
-    conn.execute(text("DELETE FROM wb.staging_invoice"))
+    attempt = current_attempt()
+    if attempt is None:
+        conn.execute(text("DELETE FROM wb.staging_invoice"))
+    else:
+        conn.execute(
+            text("DELETE FROM wb.staging_invoice WHERE attempt_id = :attempt"),
+            {"attempt": attempt},
+        )
     conn.execute(
         text(
             "INSERT INTO wb.staging_invoice"
@@ -208,13 +226,15 @@ def _restage_if_latest(
     History is untouched (no new version); only the singleton staging
     projection moves. Returns True when the submission became current.
     """
+    extra, extra_params = _attempt_sql(current_attempt())
     latest = (
         conn.execute(
             text(
                 "SELECT id FROM wb.submissions WHERE invoice_ref = :ref"
-                " ORDER BY version DESC LIMIT 1"
+                + extra
+                + " ORDER BY version DESC LIMIT 1"
             ),
-            {"ref": invoice_ref},
+            {"ref": invoice_ref, **extra_params},
         )
         .mappings()
         .first()
@@ -262,13 +282,14 @@ def ingest_submission(
     snapshot = snapshot_row(row)
     with engine.begin() as conn:
         _lock_staging(conn)
+        extra, extra_params = _attempt_sql(current_attempt())
         existing = (
             conn.execute(
                 text(
                     "SELECT id, version FROM wb.submissions"
-                    " WHERE invoice_ref = :ref AND content_hash = :hash"
+                    " WHERE invoice_ref = :ref AND content_hash = :hash" + extra
                 ),
-                {"ref": invoice_ref, "hash": content_hash},
+                {"ref": invoice_ref, "hash": content_hash, **extra_params},
             )
             .mappings()
             .first()
@@ -291,9 +312,9 @@ def ingest_submission(
             conn.execute(
                 text(
                     "SELECT COALESCE(MAX(version), 0) AS max_version"
-                    " FROM wb.submissions WHERE invoice_ref = :ref"
+                    " FROM wb.submissions WHERE invoice_ref = :ref" + extra
                 ),
-                {"ref": invoice_ref},
+                {"ref": invoice_ref, **extra_params},
             )
             .mappings()
             .first()
@@ -346,16 +367,28 @@ def _lock_staging(conn: Connection) -> None:
 
 
 def _current_staged(
-    conn: Connection, invoice_ref: str | None = None
+    conn: Connection,
+    invoice_ref: str | None = None,
+    *,
+    attempt: str | None = None,
+    bound: bool = False,
 ) -> RowMapping | None:
     query = (
         "SELECT invoice_ref, submission_id, version, snapshot FROM wb.staging_invoice"
     )
+    clauses: list[str] = []
+    params: dict[str, str] = {}
     if invoice_ref is not None:
-        query += " WHERE invoice_ref = :ref"
-    return (
-        conn.execute(text(query + " LIMIT 1"), {"ref": invoice_ref}).mappings().first()
-    )
+        clauses.append("invoice_ref = :ref")
+        params["ref"] = invoice_ref
+    if not bound:
+        attempt = current_attempt()
+    if attempt is not None:
+        clauses.append("attempt_id = :attempt")
+        params["attempt"] = attempt
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    return conn.execute(text(query + " LIMIT 1"), params).mappings().first()
 
 
 def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
@@ -378,14 +411,15 @@ def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
         status = result.status.value
         if _current_staged(conn) != staged:
             raise StaleStagedError("staging changed during the check run; rerun checks")
+        extra, extra_params = _attempt_sql(current_attempt())
         case_row = (
             conn.execute(
                 text(
                     "SELECT id FROM wb.cases"
                     " WHERE invoice_ref = :ref AND check_id = :check"
-                    " AND status = 'open'"
+                    " AND status = 'open'" + extra
                 ),
-                {"ref": invoice_ref, "check": AMOUNT_CHECK_ID},
+                {"ref": invoice_ref, "check": AMOUNT_CHECK_ID, **extra_params},
             )
             .mappings()
             .first()
@@ -475,7 +509,7 @@ def get_case_detail(
             conn.execute(
                 text(
                     "SELECT id, invoice_ref, source_submission_id, check_id, status,"
-                    " created_at, resolved_at FROM wb.cases WHERE id = :id"
+                    " created_at, resolved_at, attempt_id FROM wb.cases WHERE id = :id"
                 ),
                 {"id": case_id},
             )
@@ -514,21 +548,28 @@ def get_case_detail(
         )
         if stored is None:
             raise CaseNotFoundError(f"case {case_id} evidence missing")
+        history_sql = (
+            "SELECT m.version, m.id, r.invoice_id, r.supplier_id,"
+            " r.invoice_date, r.currency, r.amount_minor"
+            " FROM wb.submissions m"
+            " JOIN wb.submission_rows r ON r.submission_id = m.id"
+            " WHERE m.invoice_ref = :ref"
+        )
+        history_params: dict[str, str] = {"ref": str(case["invoice_ref"])}
+        case_attempt = (
+            str(case["attempt_id"]) if case["attempt_id"] is not None else None
+        )
+        if case_attempt is not None:
+            history_sql += " AND m.attempt_id = :attempt"
+            history_params["attempt"] = case_attempt
         history_rows = (
-            conn.execute(
-                text(
-                    "SELECT m.version, m.id, r.invoice_id, r.supplier_id,"
-                    " r.invoice_date, r.currency, r.amount_minor"
-                    " FROM wb.submissions m"
-                    " JOIN wb.submission_rows r ON r.submission_id = m.id"
-                    " WHERE m.invoice_ref = :ref ORDER BY m.version"
-                ),
-                {"ref": str(case["invoice_ref"])},
-            )
+            conn.execute(text(history_sql + " ORDER BY m.version"), history_params)
             .mappings()
             .all()
         )
-        current = _current_staged(conn, str(case["invoice_ref"]))
+        current = _current_staged(
+            conn, str(case["invoice_ref"]), attempt=case_attempt, bound=True
+        )
         source_version: int = conn.execute(
             text("SELECT version FROM wb.submissions WHERE id = :id"),
             {"id": str(case["source_submission_id"])},
@@ -605,14 +646,142 @@ def get_case_detail(
     }
 
 
-def list_overview(engine: Engine) -> dict[str, object]:
-    with engine.connect() as conn:
+def ensure_demo_workspace(engine: Engine, reviewer_id: str) -> dict[str, str]:
+    """Create this Reviewer's Demo Workspace and first empty Demo Attempt."""
+    with engine.begin() as conn:
+        existing = (
+            conn.execute(
+                text("SELECT id FROM wb.demo_workspaces WHERE reviewer_id = :r"),
+                {"r": reviewer_id},
+            )
+            .mappings()
+            .first()
+        )
+        if existing is None:
+            workspace_id = uuid4().hex
+            conn.execute(
+                text(
+                    "INSERT INTO wb.demo_workspaces (id, reviewer_id) VALUES (:id, :r)"
+                ),
+                {"id": workspace_id, "r": reviewer_id},
+            )
+        else:
+            workspace_id = str(existing["id"])
+        attempt = (
+            conn.execute(
+                text(
+                    "SELECT id FROM wb.demo_attempts WHERE workspace_id = :w"
+                    " ORDER BY created_at DESC, id DESC LIMIT 1"
+                ),
+                {"w": workspace_id},
+            )
+            .mappings()
+            .first()
+        )
+        if attempt is None:
+            attempt_id = uuid4().hex
+            conn.execute(
+                text(
+                    "INSERT INTO wb.demo_attempts"
+                    " (id, workspace_id, reviewer_id) VALUES (:id, :w, :r)"
+                ),
+                {"id": attempt_id, "w": workspace_id, "r": reviewer_id},
+            )
+        else:
+            attempt_id = str(attempt["id"])
+    return {"workspace_id": workspace_id, "attempt_id": attempt_id}
+
+
+_MAX_DEMO_ATTEMPTS = 5
+
+
+def _delete_demo_attempt(conn: Connection, attempt_id: str) -> None:
+    """Remove one attempt and the rows that belong only to it.
+
+    Audit tables are append-only for the request role, so the check runs and
+    traces go through a definer function that deletes by this attempt only.
+    """
+    params = {"attempt": attempt_id}
+    for statement in (
+        "DELETE FROM wb.case_verdicts WHERE attempt_id = :attempt",
+        "DELETE FROM wb.cases WHERE attempt_id = :attempt",
+        "DELETE FROM wb.submission_rows WHERE attempt_id = :attempt",
+        "DELETE FROM wb.staging_invoice WHERE attempt_id = :attempt",
+        "DELETE FROM wb.submissions WHERE attempt_id = :attempt",
+    ):
+        conn.execute(text(statement), params)
+    conn.execute(text("SELECT wb.delete_attempt_audit(:attempt)"), params)
+    conn.execute(text("DELETE FROM wb.demo_attempts WHERE id = :attempt"), params)
+
+
+def start_fresh_attempt(engine: Engine, reviewer_id: str) -> dict[str, str]:
+    """Open a new current Demo Attempt. A workspace keeps at most five."""
+    # Staging visibility follows the current attempt. Clearing it lets this
+    # transaction remove the oldest attempt's staging row and nothing else.
+    set_attempt(None)
+    with engine.begin() as conn:
+        workspace = (
+            conn.execute(
+                text("SELECT id FROM wb.demo_workspaces WHERE reviewer_id = :r"),
+                {"r": reviewer_id},
+            )
+            .mappings()
+            .one()
+        )
+        workspace_id = str(workspace["id"])
+        attempts = (
+            conn.execute(
+                text(
+                    "SELECT id FROM wb.demo_attempts WHERE workspace_id = :w"
+                    " ORDER BY created_at ASC, id ASC"
+                ),
+                {"w": workspace_id},
+            )
+            .mappings()
+            .all()
+        )
+        if len(attempts) >= _MAX_DEMO_ATTEMPTS:
+            _delete_demo_attempt(conn, str(attempts[0]["id"]))
+            attempts = attempts[1:]
+        previous_id = str(attempts[-1]["id"])
+        attempt_id = uuid4().hex
+        conn.execute(
+            text(
+                "INSERT INTO wb.demo_attempts"
+                " (id, workspace_id, reviewer_id) VALUES (:id, :w, :r)"
+            ),
+            {"id": attempt_id, "w": workspace_id, "r": reviewer_id},
+        )
+    return {
+        "workspace_id": workspace_id,
+        "attempt_id": attempt_id,
+        "previous_attempt_id": previous_id,
+    }
+
+
+def read_demo_attempt(
+    *, intake: Engine, audit: Engine, attempt_id: str
+) -> dict[str, object]:
+    """Read one Demo Attempt, including a previous read-only one."""
+    with intake.connect() as conn:
+        attempt = (
+            conn.execute(
+                text("SELECT id, workspace_id FROM wb.demo_attempts WHERE id = :id"),
+                {"id": attempt_id},
+            )
+            .mappings()
+            .first()
+        )
+        if attempt is None:
+            raise AttemptNotFoundError(f"attempt {attempt_id} not found")
         submissions = (
             conn.execute(
                 text(
                     "SELECT id, invoice_ref, version, filename, ingested_at"
-                    " FROM wb.submissions ORDER BY ingested_at DESC"
-                )
+                    " FROM wb.submissions WHERE attempt_id = :attempt"
+                    " ORDER BY ingested_at DESC"
+                ),
+                {"attempt": attempt_id},
             )
             .mappings()
             .all()
@@ -621,9 +790,105 @@ def list_overview(engine: Engine) -> dict[str, object]:
             conn.execute(
                 text(
                     "SELECT id, invoice_ref, check_id, status, created_at"
-                    " FROM wb.cases ORDER BY created_at DESC"
-                )
+                    " FROM wb.cases WHERE attempt_id = :attempt"
+                    " ORDER BY created_at DESC"
+                ),
+                {"attempt": attempt_id},
             )
+            .mappings()
+            .all()
+        )
+        verdicts = (
+            conn.execute(
+                text(
+                    "SELECT case_id, run_id, check_id, status"
+                    " FROM wb.case_verdicts WHERE attempt_id = :attempt"
+                    " ORDER BY id"
+                ),
+                {"attempt": attempt_id},
+            )
+            .mappings()
+            .all()
+        )
+    with audit.connect() as conn:
+        traces = (
+            conn.execute(
+                text(
+                    "SELECT trace_id, kind, body->>'quality_run_id' AS run_id"
+                    " FROM dq.traces WHERE attempt_id = :attempt"
+                    " ORDER BY recorded_at, seq"
+                ),
+                {"attempt": attempt_id},
+            )
+            .mappings()
+            .all()
+        )
+    return {
+        "workspace_id": str(attempt["workspace_id"]),
+        "attempt_id": str(attempt["id"]),
+        "submissions": [
+            {
+                "id": row["id"],
+                "invoice_ref": row["invoice_ref"],
+                "version": row["version"],
+                "filename": row["filename"],
+                "ingested_at": row["ingested_at"].isoformat(),
+            }
+            for row in submissions
+        ],
+        "cases": [
+            {
+                "id": row["id"],
+                "invoice_ref": row["invoice_ref"],
+                "check_id": row["check_id"],
+                "status": row["status"],
+                "created_at": row["created_at"].isoformat(),
+            }
+            for row in cases
+        ],
+        "check_results": [
+            {
+                "case_id": row["case_id"],
+                "run_id": row["run_id"],
+                "check_id": row["check_id"],
+                "status": row["status"],
+            }
+            for row in verdicts
+        ],
+        "audit": [
+            {
+                "event_id": row["trace_id"],
+                "run_id": row["run_id"],
+                "kind": row["kind"],
+            }
+            for row in traces
+        ],
+    }
+
+
+def list_overview(
+    engine: Engine, *, attempt_id: str | None = None
+) -> dict[str, object]:
+    submission_sql = (
+        "SELECT id, invoice_ref, version, filename, ingested_at FROM wb.submissions"
+    )
+    case_sql = "SELECT id, invoice_ref, check_id, status, created_at FROM wb.cases"
+    params: dict[str, str] = {}
+    if attempt_id is not None:
+        submission_sql += " WHERE attempt_id = :attempt"
+        case_sql += " WHERE attempt_id = :attempt"
+        params["attempt"] = attempt_id
+    with engine.connect() as conn:
+        submissions = (
+            conn.execute(
+                text(submission_sql + " ORDER BY ingested_at DESC"),
+                params,
+            )
+            .mappings()
+            .all()
+        )
+        cases = (
+            conn.execute(text(case_sql + " ORDER BY created_at DESC"), params)
             .mappings()
             .all()
         )
@@ -714,12 +979,17 @@ def _resolution_decision(
     )
 
 
-def resolve_case(*, intake: Engine, audit: Engine, case_id: str) -> dict[str, object]:
+def resolve_case(
+    *, intake: Engine, audit: Engine, case_id: str, attempt_id: str | None = None
+) -> dict[str, object]:
     with intake.begin() as conn:
         _lock_staging(conn)
         case = (
             conn.execute(
-                text("SELECT status, invoice_ref FROM wb.cases WHERE id = :id"),
+                text(
+                    "SELECT status, invoice_ref, attempt_id"
+                    " FROM wb.cases WHERE id = :id"
+                ),
                 {"id": case_id},
             )
             .mappings()
@@ -727,6 +997,13 @@ def resolve_case(*, intake: Engine, audit: Engine, case_id: str) -> dict[str, ob
         )
         if case is None:
             raise CaseNotFoundError(f"case {case_id} not found")
+        if attempt_id is not None and str(case["attempt_id"] or "") != attempt_id:
+            return {
+                "case_id": case_id,
+                "status": str(case["status"]),
+                "resolved": False,
+                "reason": "attempt-read-only",
+            }
         verdict = (
             conn.execute(
                 text(

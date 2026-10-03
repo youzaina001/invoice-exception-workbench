@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LedgerLens walkthrough</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: Georgia, "Iowan Old Style", serif; line-height: 1.5; max-width: 42rem; margin: 2rem auto; padding: 0 1.25rem; color: #1c1917; background: #fafaf9; }
+    nav { font-family: system-ui, sans-serif; font-size: 0.95rem; margin-bottom: 1.5rem; }
+    nav a { margin-right: 1rem; }
+    h1, h2 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    a { color: #1d4ed8; }
+    pre { font-family: ui-monospace, monospace; font-size: 0.9rem; background: #f5f5f4; padding: 0.75rem 1rem; overflow-x: auto; }
+    ol li { margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="index.html">Landing</a>
+    <a href="walkthrough.html">Walkthrough</a>
+    <a href="samples/missing_amount.csv">missing_amount.csv</a>
+    <a href="samples/corrected_amount.csv">corrected_amount.csv</a>
+  </nav>
+  <h1>Walkthrough</h1>
+  <p>This page is the invoice walkthrough for the hosted demonstration. A Reviewer is an invited person who acts as the Operator inside their own Demo Workspace. The Operator investigates an incomplete supplier invoice and resolves its exception case. The Maintainer owns the demonstration and may inspect every Demo Workspace. Hosting limits, the €0 budget, and publication status are on the <a href="index.html">landing page</a>.</p>
+
+  <h2>Sample CSVs</h2>
+  <p>The Reviewer uploads these two files in the hosted demonstration. Download them here:</p>
+  <ul>
+    <li><a href="samples/missing_amount.csv">missing_amount.csv</a> — the amount is empty, so the check opens a case.</li>
+    <li><a href="samples/corrected_amount.csv">corrected_amount.csv</a> — the same invoice with the amount filled in.</li>
+  </ul>
+  <pre>invoice_id,supplier_id,invoice_date,currency,amount
+INV-001,SUP-42,2026-09-01,EUR,</pre>
+  <pre>invoice_id,supplier_id,invoice_date,currency,amount
+INV-001,SUP-42,2026-09-01,EUR,123.45</pre>
+  <p>The original CSV is not kept. The upload is parsed into rows.</p>
+
+  <h2>Steps</h2>
+  <ol>
+    <li>The Maintainer creates the Reviewer's invitation in the Clerk dashboard. Clerk sends the email. The application does not send mail and does not offer an invite screen or public registration.</li>
+    <li>The Reviewer signs in. The first sign-in creates one Demo Workspace and one Demo Attempt. That Demo Attempt starts with no invoices.</li>
+    <li>The Reviewer ingests <a href="samples/missing_amount.csv">missing_amount.csv</a>, then runs checks on the current submission. The missing amount opens a case.</li>
+    <li>The Reviewer ingests <a href="samples/corrected_amount.csv">corrected_amount.csv</a> and runs checks again.</li>
+    <li>The Reviewer opens the case and uses Resolve case. Resolve closes the case only when the current check allows it.</li>
+  </ol>
+
+  <h2>Signing out and returning</h2>
+  <p>Signing out and returning resumes the same Demo Attempt, including its submissions, cases, check results, and audit evidence. Signing out does not reset the work.</p>
+
+  <h2>Start fresh</h2>
+  <p>Start fresh opens a new Demo Attempt that contains no invoices. The previous Demo Attempt stays readable in the same Demo Workspace, including its audit evidence. Ingest and resolve against that previous Demo Attempt are refused.</p>
+
+  <h2>Five Demo Attempts</h2>
+  <p>A Demo Workspace keeps at most five Demo Attempts. The first sign-in creates the first. Each Start fresh adds one. When the Reviewer already has five, Start fresh deletes the oldest attempt in that workspace, including its submissions, cases, check results, and audit evidence, and the workspace again holds five. That deletion does not change any other Reviewer's Demo Workspace.</p>
+</body>
+</html>

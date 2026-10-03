@@ -1,0 +1,2 @@
+invoice_id,supplier_id,invoice_date,currency,amount
+INV-001,SUP-42,2026-09-01,EUR,123.45
