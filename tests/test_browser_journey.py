@@ -174,6 +174,14 @@ def test_hosted_attempt_history_in_browser(live_server: str, session_key: Any) -
             page.get_by_role("link", name="Current Demo Attempt").click()
             page.get_by_role("button", name="Start fresh", exact=True).click()
             expect(page.get_by_text("missing_amount.csv", exact=True)).to_be_hidden()
+            page.locator('input[type="file"]').set_input_files(
+                {"name": "invalid.csv", "mimeType": "text/csv", "buffer": b"bad,csv\n"}
+            )
+            page.get_by_role("button", name="Ingest", exact=True).click()
+            expect(page.locator(".error")).to_be_visible()
+            expect(
+                page.get_by_role("button", name="Start fresh", exact=True)
+            ).to_be_visible()
             page.get_by_role("link", name="Attempt from").click()
             expect(
                 page.get_by_role("heading", name="Read-only Demo Attempt")

@@ -333,8 +333,12 @@ def test_previous_attempt_history_and_checks_stay_put(
     assert after["history"]["audit"] == before["history"]["audit"]
 
 
+@pytest.mark.parametrize("over_cap", [False, True], ids=["retained", "over-cap"])
 def test_retention_cannot_delete_current_retained_or_other_workspace_audit(
-    hosted_client: TestClient, pg_dsns: dict[str, str], api_headers: dict[str, str]
+    hosted_client: TestClient,
+    pg_dsns: dict[str, str],
+    api_headers: dict[str, str],
+    over_cap: bool,
 ) -> None:
     from airflow_dq_agent.warehouse.db import make_engine
     from sqlalchemy import text
@@ -347,9 +351,48 @@ def test_retention_cannot_delete_current_retained_or_other_workspace_audit(
     current = hosted_client.post("/demo-attempts/start-fresh", headers=headers).json()[
         "attempt_id"
     ]
-    other = hosted_client.get(
-        "/", headers={**api_headers, "X-Reviewer": "other"}
-    ).json()["attempt_id"]
+    _ingest(hosted_client, headers, "missing_amount.csv")
+    _run(hosted_client, headers)
+    other_headers = {**api_headers, "X-Reviewer": "other"}
+    other = hosted_client.get("/", headers=other_headers).json()["attempt_id"]
+    _ingest(hosted_client, other_headers, "missing_amount.csv")
+    _run(hosted_client, other_headers)
+    if over_cap:
+        # Owner fixture reaches the >5 branch without HTTP automatically pruning.
+        # These older attempts make `first` retained but not eligible for deletion.
+        owner = make_engine(pg_dsns["admin"])
+        try:
+            with owner.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO wb.demo_attempts "
+                        "(id, workspace_id, reviewer_id, created_at) "
+                        "SELECT 'older-' || n, workspace_id, reviewer_id, "
+                        "NOW() - n * INTERVAL '1 day' FROM wb.demo_attempts "
+                        "CROSS JOIN generate_series(1, 4) n WHERE id = :id"
+                    ),
+                    {"id": first},
+                )
+                assert (
+                    conn.execute(
+                        text(
+                            "SELECT count(*) FROM wb.demo_attempts "
+                            "WHERE reviewer_id = 'retention-owner'"
+                        )
+                    ).scalar_one()
+                    == 6
+                )
+        finally:
+            owner.dispose()
+    before = [
+        hosted_client.get(f"/demo-attempts/{attempt}", headers=identity).json()
+        for attempt, identity in (
+            (first, headers),
+            (current, headers),
+            (other, other_headers),
+        )
+    ]
+    assert all(attempt["audit"] for attempt in before)
     engine = make_engine(pg_dsns["intake"])
     for attempt in (first, current, other):
         with pytest.raises(DBAPIError, match="retention not permitted"):
@@ -361,7 +404,15 @@ def test_retention_cannot_delete_current_retained_or_other_workspace_audit(
                 conn.execute(
                     text("SELECT wb.delete_attempt_audit(:id)"), {"id": attempt}
                 )
-    assert hosted_client.get("/demo-attempts/" + first, headers=headers).json()["audit"]
+    after = [
+        hosted_client.get(f"/demo-attempts/{attempt}", headers=identity).json()
+        for attempt, identity in (
+            (first, headers),
+            (current, headers),
+            (other, other_headers),
+        )
+    ]
+    assert after == before
     engine.dispose()
 
 
@@ -386,3 +437,30 @@ def test_hosted_browser_has_start_fresh_and_read_only_history(
     assert "missing_amount.csv" in history.text
     assert 'action="/ingest"' not in history.text
     assert 'action="/runs"' not in history.text
+
+
+@pytest.mark.parametrize("oversized", [False, True], ids=["malformed", "oversized"])
+def test_hosted_upload_error_keeps_current_attempt_and_history_navigation(
+    hosted_client: TestClient, oversized: bool
+) -> None:
+    headers = {"X-Reviewer": "upload-error-reviewer"}
+    api = {**headers, "Accept": "application/json"}
+    first = hosted_client.get("/", headers=api).json()["attempt_id"]
+    started = hosted_client.post("/demo-attempts/start-fresh", headers=api).json()
+    data = b"x" * (5 * 1024 * 1024 + 1) if oversized else b"bad,csv\n"
+    status = 413 if oversized else 400
+    response = hosted_client.post(
+        "/ingest", headers=headers, files={"file": ("invalid.csv", data, "text/csv")}
+    )
+    assert response.status_code == status
+    assert 'action="/demo-attempts/start-fresh"' in response.text
+    assert f'href="/demo-attempts/{first}"' in response.text
+    json_response = hosted_client.post(
+        "/ingest", headers=api, files={"file": ("invalid.csv", data, "text/csv")}
+    )
+    assert json_response.status_code == status
+    assert set(json_response.json()) == {"detail"}
+    assert (
+        hosted_client.get("/", headers=api).json()["attempt_id"]
+        == started["attempt_id"]
+    )

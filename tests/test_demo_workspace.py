@@ -66,6 +66,8 @@ def test_unsigned_hosted_request_returns_no_journey_and_no_registration(
         ("post", "/runs", {}),
         ("get", f"/cases/{case_id}", {}),
         ("post", f"/cases/{case_id}/resolve", {}),
+        ("get", "/demo-attempts/unsigned-attempt", {}),
+        ("post", "/demo-attempts/start-fresh", {}),
     ]
     unsigned_headers = (
         api_headers,
@@ -111,6 +113,83 @@ def test_first_signed_in_reviewer_receives_empty_demo_attempt(
     assert resumed["attempt_id"] == attempt_id
     assert resumed["submissions"] == []
     assert resumed["cases"] == []
+
+
+def test_intake_cannot_insert_an_explicit_foreign_reviewer(
+    hosted_client: TestClient, pg_dsns: dict[str, str], api_headers: dict[str, str]
+) -> None:
+    from airflow_dq_agent.warehouse.db import make_engine
+    from psycopg.errors import InsufficientPrivilege
+    from sqlalchemy import text
+    from sqlalchemy.exc import DBAPIError
+
+    victim_headers = {**api_headers, "X-Reviewer": "victim"}
+    victim = hosted_client.get("/", headers=victim_headers).json()
+    attacker = hosted_client.get(
+        "/", headers={**api_headers, "X-Reviewer": "attacker"}
+    ).json()
+    engine = make_engine(pg_dsns["intake"])
+    try:
+        with pytest.raises(DBAPIError) as denied, engine.begin() as conn:
+            conn.execute(text("SELECT set_config('app.hosted', 'true', true)"))
+            conn.execute(text("SELECT set_config('app.reviewer', 'attacker', true)"))
+            conn.execute(
+                text("SELECT set_config('app.attempt', :id, true)"),
+                {"id": attacker["attempt_id"]},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO wb.submissions "
+                    "(id, invoice_ref, version, content_hash, filename, "
+                    "reviewer_id, attempt_id) VALUES "
+                    "('foreign-insert', 'INV-FOREIGN', 1, 'hash', "
+                    "'synthetic.csv', 'victim', :id)"
+                ),
+                {"id": victim["attempt_id"]},
+            )
+        assert isinstance(denied.value.orig, InsufficientPrivilege)
+        assert "row-level security" in (denied.value.orig.diag.message_primary or "")
+    finally:
+        engine.dispose()
+    assert hosted_client.get("/", headers=victim_headers).json() == victim
+
+
+def test_hosted_displaced_invoice_requires_restage_before_resolution(
+    hosted_client: TestClient, api_headers: dict[str, str]
+) -> None:
+    headers = {**api_headers, "X-Reviewer": "multi-invoice-reviewer"}
+    opened = hosted_client.get("/", headers=headers).json()
+    _ingest(hosted_client, headers, "missing_amount.csv")
+    case_id = _run(hosted_client, headers)["case_id"]
+    corrected = _ingest(hosted_client, headers, "corrected_amount.csv")
+    assert _run(hosted_client, headers)["status"] == "pass"
+    _ingest(hosted_client, headers, "valid_control.csv")
+    displaced = hosted_client.post(f"/cases/{case_id}/resolve", headers=headers).json()
+    assert (displaced["resolved"], displaced["reason"]) == (False, "current-missing")
+    page = hosted_client.get(
+        f"/cases/{case_id}", headers={"X-Reviewer": "multi-invoice-reviewer"}
+    )
+    assert "re-upload its latest CSV" in page.text
+    assert "Resolve case</button>" not in page.text
+
+    restaged = _ingest(hosted_client, headers, "corrected_amount.csv")
+    assert restaged["duplicate"] is True
+    assert restaged["made_current"] is True
+    assert restaged["submission_id"] == corrected["submission_id"]
+    assert restaged["version"] == 2
+    checked = _run(hosted_client, headers)
+    assert (checked["status"], checked["case_id"], checked["version"]) == (
+        "pass",
+        case_id,
+        2,
+    )
+    case = hosted_client.get(f"/cases/{case_id}", headers=headers).json()
+    assert case["core"]["n_total"] == 1
+    resolved = hosted_client.post(f"/cases/{case_id}/resolve", headers=headers).json()
+    assert (resolved["resolved"], resolved["reason"]) == (True, "ok")
+    overview = hosted_client.get("/", headers=headers).json()
+    assert overview["attempt_id"] == opened["attempt_id"]
+    assert len(overview["submissions"]) == 3
 
 
 def test_reviewer_resolves_uploaded_attempt_through_existing_gate(
@@ -282,36 +361,18 @@ def test_hosted_query_without_reviewer_sees_nothing_owner_sees_both(
         _ingest(hosted_client, headers, filename)
         _run(hosted_client, headers)
 
-    bare = _bare_counts(
-        pg_dsns["intake"],
-        (
-            "wb.submissions",
-            "wb.cases",
-            "wb.case_verdicts",
-            "wb.demo_workspaces",
-        ),
+    tables = (
+        "wb.submissions",
+        "wb.submission_rows",
+        "wb.staging_invoice",
+        "wb.cases",
+        "wb.case_verdicts",
+        "wb.demo_workspaces",
+        "wb.demo_attempts",
     )
-    assert bare == {
-        "wb.submissions": 0,
-        "wb.cases": 0,
-        "wb.case_verdicts": 0,
-        "wb.demo_workspaces": 0,
-    }
-    hidden = _hosted_counts(
-        pg_dsns["intake"],
-        (
-            "wb.submissions",
-            "wb.cases",
-            "wb.case_verdicts",
-            "wb.demo_workspaces",
-        ),
-    )
-    assert hidden == {
-        "wb.submissions": 0,
-        "wb.cases": 0,
-        "wb.case_verdicts": 0,
-        "wb.demo_workspaces": 0,
-    }
+    assert _bare_counts(pg_dsns["intake"], tables) == dict.fromkeys(tables, 0)
+    assert _hosted_counts(pg_dsns["intake"], tables) == dict.fromkeys(tables, 0)
+    assert all(count > 0 for count in _bare_counts(pg_dsns["admin"], tables).values())
     audit_hidden = _hosted_counts(pg_dsns["audit"], ("dq.traces",))
     assert audit_hidden == {"dq.traces": 0}
     # The audit login stays append-only for check runs. A temporary select

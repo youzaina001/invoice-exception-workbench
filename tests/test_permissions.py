@@ -71,6 +71,20 @@ def test_audit_login_cannot_read_companion(pg_dsns: dict[str, str]) -> None:
     _denied(pg_dsns["audit"], "SELECT COUNT(*) FROM wb.submissions")
 
 
+@pytest.mark.parametrize("role", ["intake", "audit"])
+@pytest.mark.parametrize("table", ["dq.traces", "dq.check_runs"])
+@pytest.mark.parametrize("operation", ["UPDATE", "DELETE"])
+def test_runtime_roles_cannot_update_or_delete_core_audit(
+    pg_dsns: dict[str, str], role: str, table: str, operation: str
+) -> None:
+    statement = (
+        f"UPDATE {table} SET body = body"
+        if operation == "UPDATE"
+        else f"DELETE FROM {table}"
+    )
+    _denied(pg_dsns[role], statement)
+
+
 def test_core_audit_contains_no_row_values(
     client: TestClient, api_headers: dict[str, str], pg_dsns: dict[str, str]
 ) -> None:

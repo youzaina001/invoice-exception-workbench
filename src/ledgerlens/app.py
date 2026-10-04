@@ -75,11 +75,16 @@ def _error(request: Request, detail: str, status_code: int) -> Response:
 def _index_error(
     request: Request, engine: Engine, detail: str, status_code: int
 ) -> Response:
+    attempt_id = current_attempt()
     return _render(
         request,
         "index.html",
         {
-            "overview": list_overview(engine, attempt_id=current_attempt()),
+            "overview": {
+                **list_overview(engine, attempt_id=attempt_id),
+                "attempt_id": attempt_id,
+            },
+            "attempts": list_demo_attempts(engine) if attempt_id else [],
             "error": detail,
             "last_run": None,
             "last_status": None,
