@@ -10,6 +10,32 @@ th, td { border: 1px solid #999; padding: 0.3rem 0.8rem; text-align: left; }
 .error { color: #a00; }
 .unknown { color: #777; }
 </style>
+{% if request.app.state.settings.hosted and request.app.state.settings.clerk_publishable_key and request.app.state.settings.clerk_issuer %}
+<script defer crossorigin="anonymous"
+  data-clerk-publishable-key="{{ request.app.state.settings.clerk_publishable_key }}"
+  src="{{ request.app.state.settings.clerk_issuer }}/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+  onload="loadClerk()"></script>
+<script>
+async function loadClerk() {
+  await window.Clerk.load();
+  const signIn = document.getElementById('sign-in');
+  if (signIn) {
+    if (window.Clerk.session) {
+      await window.Clerk.session.getToken();
+      if (!new URLSearchParams(window.location.search).has('session_refreshed')) {
+        window.location.replace('/?session_refreshed=1');
+      } else {
+        signIn.textContent = 'Your session could not be verified. Please contact the Maintainer.';
+      }
+    } else {
+      window.Clerk.mountSignIn(signIn, {withSignUp: false, forceRedirectUrl: '/'});
+    }
+  } else if (!window.Clerk.session) {
+    window.location.replace('/');
+  }
+}
+</script>
+{% endif %}
 </head>
 <body>
 <h1>LedgerLens</h1>

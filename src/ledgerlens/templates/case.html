@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %} — case {{ case.invoice_ref }}{% endblock %}
 {% block body %}
+<nav><a href="/">Current Demo Attempt</a></nav>
+{% if case.resolution.reason == "attempt-read-only" %}<p>This Demo Attempt is read-only.</p>{% endif %}
 <h2>Case {{ case.invoice_ref }} — {{ case.status }}</h2>
 {% if case.resolution.allowed %}
 <form action="/cases/{{ case.case_id }}/resolve" method="post">

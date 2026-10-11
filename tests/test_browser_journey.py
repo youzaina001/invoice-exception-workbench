@@ -8,9 +8,13 @@ import subprocess
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import httpx
+import jwt
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from playwright.sync_api import expect, sync_playwright
 
 from ledgerlens.local_pg import find_free_port
@@ -21,7 +25,10 @@ FIXTURES = ROOT / "fixtures"
 
 @pytest.fixture(scope="module")
 def live_server(
-    pg_dsns: dict[str, str], tmp_path_factory: pytest.TempPathFactory
+    pg_dsns: dict[str, str],
+    tmp_path_factory: pytest.TempPathFactory,
+    request: pytest.FixtureRequest,
+    session_key: Any,
 ) -> Iterator[str]:
     port = find_free_port()
     work = tmp_path_factory.mktemp("uvicorn")
@@ -37,6 +44,18 @@ def live_server(
         "TRACE_POSTGRES": "true",
         "TRACES_DIR": str(tmp_path_factory.mktemp("ltraces")),
     }
+    if getattr(request, "param", False):
+        env.update(
+            HOSTED="true",
+            CLERK_ISSUER="https://test.clerk.accounts.dev",
+            CLERK_AUTHORIZED_PARTIES=f'["https://demo.example.com", "http://127.0.0.1:{port}"]',
+            CLERK_JWT_KEY=session_key.public_key()
+            .public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            .decode(),
+        )
     with open(log, "w", encoding="utf-8") as handle:
         proc = subprocess.Popen(
             ["make", "--no-print-directory", "run", f"PORT={port}"],
@@ -52,7 +71,7 @@ def live_server(
             if proc.poll() is not None:
                 raise RuntimeError(f"server exited: {log.read_text()[-2000:]}")
             try:
-                if httpx.get(base, timeout=2).status_code == 200:
+                if httpx.get(base, timeout=2).status_code in (200, 401):
                     break
             except httpx.ConnectError:
                 time.sleep(0.5)
@@ -114,5 +133,64 @@ def test_operator_journey_in_browser(live_server: str) -> None:
             expect(page.get_by_text("Duplicate upload:")).to_contain_text(
                 "restaged as current"
             )
+        finally:
+            browser.close()
+
+
+@pytest.fixture(scope="module")
+def session_key() -> Any:
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+@pytest.mark.parametrize("live_server", [True], indirect=True)
+def test_hosted_attempt_history_in_browser(live_server: str, session_key: Any) -> None:
+    token = jwt.encode(
+        {
+            "sub": "browser-reviewer",
+            "sid": "sess_browser",
+            "iss": "https://test.clerk.accounts.dev",
+            "azp": "https://demo.example.com",
+            "exp": int(time.time()) + 120,
+            "nbf": int(time.time()) - 5,
+            "iat": int(time.time()) - 5,
+        },
+        session_key,
+        algorithm="RS256",
+    )
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            context = browser.new_context()
+            context.add_cookies(
+                [{"name": "__session", "value": token, "url": live_server}]
+            )
+            page = context.new_page()
+            page.goto(live_server)
+            page.locator('input[type="file"]').set_input_files(
+                str(FIXTURES / "missing_amount.csv")
+            )
+            page.get_by_role("button", name="Ingest").click()
+            page.get_by_role("button", name="Run checks on current submission").click()
+            page.get_by_role("link", name="Current Demo Attempt").click()
+            page.get_by_role("button", name="Start fresh", exact=True).click()
+            expect(page.get_by_text("missing_amount.csv", exact=True)).to_be_hidden()
+            page.locator('input[type="file"]').set_input_files(
+                {"name": "invalid.csv", "mimeType": "text/csv", "buffer": b"bad,csv\n"}
+            )
+            page.get_by_role("button", name="Ingest", exact=True).click()
+            expect(page.locator(".error")).to_be_visible()
+            expect(
+                page.get_by_role("button", name="Start fresh", exact=True)
+            ).to_be_visible()
+            page.get_by_role("link", name="Attempt from").click()
+            expect(
+                page.get_by_role("heading", name="Read-only Demo Attempt")
+            ).to_be_visible()
+            expect(page.get_by_text("missing_amount.csv", exact=True)).to_be_visible()
+            expect(page.get_by_role("heading", name="Audit evidence")).to_be_visible()
+            expect(page.get_by_role("button", name="Ingest", exact=True)).to_be_hidden()
+            page.get_by_role("link", name="INV-001", exact=True).click()
+            expect(page.get_by_text("This Demo Attempt is read-only.")).to_be_visible()
+            expect(page.get_by_role("button", name="Resolve case")).to_be_hidden()
         finally:
             browser.close()
