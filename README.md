@@ -45,10 +45,12 @@ Apply Admissions, and row values never enter core audit payloads (pinned by
 
 ## Tested core revision
 
-- Core checkout: `/home/youzaina001/agy-projects/projects/airflow-dq-agent/`
-- Commit `0371013` (merge PR #94), package `0.2.0`
-- Repro: `git -C <core> log --oneline -1` shows `0371013`; install it editable
-  with `uv pip install -e <core>` inside the workbench `.venv`.
+- CI selects core commit `a1477241fa856df64687e998347e3ecca315619a` explicitly.
+  The original M1 evidence used `0371013` (merge PR #94).
+- Repro: check out the supported revision in your chosen core directory, then
+  run `make setup CORE=/path/to/core` and `make check CORE=/path/to/core`.
+  Pytest reports the interpreter, both resolved sources, and the core revision;
+  Make refuses a core imported from a different directory.
 - Core settings for M1: `LLM_MODE=stub`, `APPLY_MODE=off`,
   `TRACE_POSTGRES=true` (real `dq.check_runs`/`dq.traces` rows, no approval or
   apply path).
@@ -94,8 +96,8 @@ it.
 ## Setup and demo
 
 ```bash
-cd invoice-exception-workbench-m1
-make setup CORE=/path/to/airflow-dq-agent  # checkout core commit 0371013 first
+cd invoice-exception-workbench
+make setup CORE=/path/to/airflow-dq-agent  # use the supported core revision above
 make browser-install                    # Chromium for the browser test
 make db                                 # keep running in terminal 1
 # In terminal 2, from this same directory:
@@ -145,7 +147,7 @@ only when the current evidence permits it.
 ## Verification
 
 ```bash
-make check             # real PostgreSQL, browser, lint/format check, strict mypy
+make check CORE=/path/to/airflow-dq-agent  # same core selected during setup
 # Or individually: make test; make lint; make typecheck
 ```
 
@@ -162,7 +164,6 @@ credentials and never need the demo's `.env` values.
 
 See [review follow-up](docs/review-follow-up.md) for finding dispositions and
 [PR handoff](docs/pr1-handoff.md) for verification and publishing status.
-
 
 ## Hosted invitation-only demo
 
@@ -296,3 +297,8 @@ retained and foreign attempts. The same transaction removes the attempt's intake
 rows. Runtime roles receive no direct UPDATE/DELETE grant on audit tables;
 `dq_audit` remains append-only. The database owner can inspect every workspace
 and retained historical attempt for maintenance. No hosted deployment is claimed.
+
+See [verification and continuation](docs/agents/verification.md) for source checks
+and retained receipts. [Domain terms](CONTEXT.md) and the
+[accepted hosted-services plan](docs/adr/0001-select-hosted-services.md) name the
+hosted demonstration. No hosted deployment is claimed.
