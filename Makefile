@@ -11,26 +11,26 @@ help:
 	@echo 'make check (tests including Chromium, lint, formatting, typecheck)'
 
 setup:
-	uv venv $(VENV)
-	uv pip install --python $(VENV)/bin/python -e '.[dev]' -e '$(CORE)'
+	uv venv "$(VENV)"
+	uv pip install --python "$(VENV)/bin/python" -e '.[dev]' -e '$(CORE)'
 
 browser-install:
-	$(VENV)/bin/playwright install chromium
+	"$(VENV)/bin/playwright" install chromium
 
 db:
-	$(VENV)/bin/python scripts/dev_pg.py
+	"$(VENV)/bin/python" scripts/dev_pg.py
 
 run:
-	$(VENV)/bin/uvicorn ledgerlens.app:app --host 127.0.0.1 --port $(PORT)
+	"$(VENV)/bin/uvicorn" ledgerlens.app:app --host 127.0.0.1 --port $(PORT)
 
 test:
-	$(VENV)/bin/python -m pytest -q --tb=short
+	"$(VENV)/bin/python" -m pytest -q --tb=short '--core-checkout=$(CORE)'
 
 lint:
-	$(VENV)/bin/ruff check src tests scripts
-	$(VENV)/bin/ruff format --check src tests scripts
+	"$(VENV)/bin/ruff" check src tests scripts
+	"$(VENV)/bin/ruff" format --check src tests scripts
 
 typecheck:
-	$(VENV)/bin/mypy src tests scripts
+	"$(VENV)/bin/mypy" src tests scripts
 
 check: test lint typecheck

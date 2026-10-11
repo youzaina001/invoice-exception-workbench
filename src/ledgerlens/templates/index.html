@@ -9,6 +9,19 @@
 {% endif %}
 {% endif %}
 {% if last_run %}<p>Last run {{ last_run }}: {{ last_status }} (no case opened)</p>{% endif %}
+{% if overview.attempt_id %}
+<nav><a href="/">Current Demo Attempt</a></nav>
+{% if read_only %}<h2>Read-only Demo Attempt</h2>
+<p>This saved attempt cannot be changed.</p>
+{% else %}
+<form action="/demo-attempts/start-fresh" method="post"><button type="submit">Start fresh</button></form>
+<p>A new empty attempt keeps your previous work as read-only history. At most five attempts are kept; starting a sixth removes the oldest.</p>
+<h2>Demo Attempt history</h2>
+<ul>{% for attempt in attempts %}{% if attempt.id != overview.attempt_id %}
+<li><a href="/demo-attempts/{{ attempt.id }}">Attempt from {{ attempt.created_at }}</a></li>
+{% endif %}{% endfor %}</ul>
+{% endif %}{% endif %}
+{% if not read_only %}
 <h2>Ingest supplier CSV</h2>
 <form action="/ingest" method="post" enctype="multipart/form-data">
 <input type="file" name="file" accept=".csv" required>
@@ -18,6 +31,7 @@
 <form action="/runs" method="post">
 <button type="submit">Run checks on current submission</button>
 </form>
+{% endif %}
 <h2>Submissions</h2>
 <table>
 <tr><th>Reference</th><th>Version</th><th>File</th><th>Ingested</th></tr>
@@ -32,4 +46,10 @@
 <tr><td><a href="/cases/{{ c.id }}">{{ c.invoice_ref }}</a></td><td>{{ c.check_id }}</td><td>{{ c.status }}</td><td>{{ c.created_at }}</td></tr>
 {% endfor %}
 </table>
+{% if read_only %}
+<h2>Check results</h2>
+<ul>{% for check in overview.check_results %}<li>{{ check.check_id }}: {{ check.status }}</li>{% endfor %}</ul>
+<h2>Audit evidence</h2>
+<ul>{% for entry in overview.audit %}<li>{{ entry.kind }} — {{ entry.event_id }}</li>{% endfor %}</ul>
+{% endif %}
 {% endblock %}

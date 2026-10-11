@@ -1,0 +1,38 @@
+name: LedgerLens checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: workbench
+      - uses: actions/checkout@v4
+        with:
+          repository: youzaina001/airflow-dq-agent
+          ref: a1477241fa856df64687e998347e3ecca315619a
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install workbench and supported core
+        working-directory: workbench
+        run: make setup CORE="$GITHUB_WORKSPACE/core"
+      - name: Install Chromium and runner libraries
+        working-directory: workbench
+        run: |
+          .venv/bin/playwright install-deps chromium
+          make browser-install
+      - name: Test PostgreSQL and browser journeys, lint, and typecheck
+        working-directory: workbench
+        run: make check CORE="$GITHUB_WORKSPACE/core"

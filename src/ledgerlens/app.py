@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
@@ -14,17 +14,32 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.engine import Engine
 
+from ledgerlens.auth import verified_reviewer
+from ledgerlens.request_scope import (
+    activate_connection_scope,
+    bind_scope,
+    current_attempt,
+    install_scope,
+    reset_scope,
+    set_attempt,
+)
 from ledgerlens.resolution import refusal_guidance
 from ledgerlens.services import (
+    AttemptNotFoundError,
+    AttemptReadOnlyError,
     CaseNotFoundError,
     CheckMissingError,
     NothingStagedError,
     StaleStagedError,
+    ensure_demo_workspace,
     get_case_detail,
     ingest_submission,
+    list_demo_attempts,
     list_overview,
+    read_demo_attempt,
     resolve_case,
     run_current_checks,
+    start_fresh_attempt,
 )
 from ledgerlens.settings import Settings
 
@@ -60,11 +75,16 @@ def _error(request: Request, detail: str, status_code: int) -> Response:
 def _index_error(
     request: Request, engine: Engine, detail: str, status_code: int
 ) -> Response:
+    attempt_id = current_attempt()
     return _render(
         request,
         "index.html",
         {
-            "overview": list_overview(engine),
+            "overview": {
+                **list_overview(engine, attempt_id=attempt_id),
+                "attempt_id": attempt_id,
+            },
+            "attempts": list_demo_attempts(engine) if attempt_id else [],
             "error": detail,
             "last_run": None,
             "last_status": None,
@@ -81,6 +101,66 @@ def _engines(app: FastAPI) -> tuple[Engine, str, Engine]:
     return app.state.intake_engine, settings.read_dsn, app.state.audit_engine
 
 
+def _reviewer_id(request: Request) -> str | None:
+    return cast(str | None, getattr(request.state, "reviewer", None))
+
+
+def _unsigned_response(request: Request) -> Response | None:
+    """Hosted routes stay closed until a Reviewer is signed in.
+
+    The body is a refusal only: no submissions, cases, check results, or
+    audit evidence, and no public registration offer.
+    """
+    settings: Settings = request.app.state.settings
+    if not settings.hosted or _reviewer_id(request) is not None:
+        return None
+    return _render(request, "sign_in.html", {}, {"detail": "sign-in required"}, 401)
+
+
+def _named_attempt(request: Request) -> str | None:
+    raw = request.headers.get("X-Demo-Attempt")
+    if raw is None:
+        return None
+    named = raw.strip()
+    return named or None
+
+
+def _read_only_attempt(request: Request, current: str | None) -> Response | None:
+    """A named non-current Demo Attempt accepts reads and refuses writes."""
+    named = _named_attempt(request)
+    if named is None or current is None or named == current:
+        return None
+    payload = {"detail": "attempt-read-only", "reason": "attempt-read-only"}
+    if wants_json(request):
+        return JSONResponse(payload, status_code=409)
+    return _error(request, "attempt-read-only", 409)
+
+
+def _prepare_demo(request: Request) -> dict[str, str] | None:
+    """Open this Reviewer's Demo Workspace on the request's copied context."""
+    settings: Settings = request.app.state.settings
+    if not settings.hosted:
+        return None
+    reviewer = _reviewer_id(request)
+    if reviewer is None:
+        return None
+    intake, _, _ = _engines(request.app)
+    demo = ensure_demo_workspace(intake, reviewer)
+    set_attempt(demo["attempt_id"])
+    return demo
+
+
+def _prepare_mutation(request: Request) -> dict[str, str] | Response | None:
+    denied = _unsigned_response(request)
+    if denied is not None:
+        return denied
+    demo = _prepare_demo(request)
+    read_only = _read_only_attempt(
+        request, None if demo is None else demo["attempt_id"]
+    )
+    return read_only if read_only is not None else demo
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
@@ -91,7 +171,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 engine.dispose()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    authenticate: Callable[[Request], str | None] = verified_reviewer,
+) -> FastAPI:
+    activate_connection_scope()
     resolved = settings or Settings()
     app = FastAPI(title="LedgerLens", lifespan=lifespan)
     app.state.settings = resolved
@@ -101,13 +186,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.audit_engine = (
         make_engine(resolved.audit_dsn) if resolved.audit_dsn else None
     )
+    for engine in (app.state.intake_engine, app.state.audit_engine):
+        if engine is not None:
+            install_scope(engine)
+
+    @app.exception_handler(AttemptReadOnlyError)
+    async def read_only_error(request: Request, exc: AttemptReadOnlyError) -> Response:
+        if wants_json(request):
+            return JSONResponse(
+                {"detail": str(exc), "reason": str(exc)}, status_code=409
+            )
+        return _error(request, str(exc), 409)
+
+    @app.middleware("http")
+    async def _hosted_scope(request: Request, call_next: Any) -> Response:
+        # Bind here, not in the endpoint thread: that thread receives a copy.
+        settings: Settings = request.app.state.settings
+        reviewer = authenticate(request) if settings.hosted else None
+        request.state.reviewer = reviewer
+        tokens = bind_scope(hosted=settings.hosted, reviewer=reviewer)
+        try:
+            return cast(Response, await call_next(request))
+        finally:
+            reset_scope(tokens)
 
     @app.get("/")
     def index(request: Request) -> Response:
+        denied = _unsigned_response(request)
+        if denied is not None:
+            return denied
+        demo = _prepare_demo(request)
         intake, _, _ = _engines(request.app)
-        overview = list_overview(intake)
+        overview = list_overview(
+            intake, attempt_id=None if demo is None else demo["attempt_id"]
+        )
+        if demo is not None:
+            overview = {**overview, **demo}
         context = {
             "overview": overview,
+            "attempts": list_demo_attempts(intake) if demo else [],
             "last_run": request.query_params.get("last_run"),
             "last_status": request.query_params.get("last_status"),
             "duplicate": request.query_params.get("duplicate"),
@@ -117,8 +234,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         return _render(request, "index.html", context, overview)
 
+    @app.post("/demo-attempts/start-fresh")
+    def start_fresh(request: Request) -> Response:
+        denied = _unsigned_response(request)
+        if denied is not None:
+            return denied
+        if not request.app.state.settings.hosted:
+            return _error(request, "not found", 404)
+        reviewer = _reviewer_id(request)
+        assert reviewer is not None
+        _prepare_demo(request)
+        intake, _, _ = _engines(request.app)
+        started = start_fresh_attempt(intake, reviewer)
+        set_attempt(started["attempt_id"])
+        if wants_json(request):
+            return JSONResponse(started)
+        return RedirectResponse("/", status_code=303)
+
+    @app.get("/demo-attempts/{attempt_id}")
+    def read_attempt(request: Request, attempt_id: str) -> Response:
+        denied = _unsigned_response(request)
+        if denied is not None:
+            return denied
+        if not request.app.state.settings.hosted:
+            return _error(request, "attempt not found", 404)
+        _prepare_demo(request)
+        intake, _, audit = _engines(request.app)
+        try:
+            payload = read_demo_attempt(
+                intake=intake, audit=audit, attempt_id=attempt_id
+            )
+        except AttemptNotFoundError as exc:
+            return _error(request, str(exc), 404)
+        if wants_json(request):
+            return JSONResponse(cast(dict[str, Any], payload))
+        return _render(
+            request,
+            "index.html",
+            {"overview": payload, "read_only": True},
+            cast(dict[str, Any], payload),
+        )
+
     @app.post("/ingest")
     def ingest(request: Request, file: UploadFile) -> Response:
+        demo = _prepare_mutation(request)
+        if isinstance(demo, Response):
+            return demo
         intake, _, _ = _engines(request.app)
         filename = file.filename or "upload.csv"
         data = file.file.read(MAX_UPLOAD_BYTES + 1)
@@ -149,6 +310,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/runs")
     def run_checks(request: Request) -> Response:
+        demo = _prepare_mutation(request)
+        if isinstance(demo, Response):
+            return demo
         intake, read_dsn, _ = _engines(request.app)
         try:
             run = run_current_checks(intake=intake, read_dsn=read_dsn)
@@ -167,6 +331,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/cases/{case_id}")
     def get_case(request: Request, case_id: str) -> Response:
+        denied = _unsigned_response(request)
+        if denied is not None:
+            return denied
+        _prepare_demo(request)
         intake, _, audit = _engines(request.app)
         try:
             case = get_case_detail(intake=intake, audit=audit, case_id=case_id)
@@ -186,13 +354,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/cases/{case_id}/resolve")
     def resolve(request: Request, case_id: str) -> Response:
+        demo = _prepare_mutation(request)
+        if isinstance(demo, Response):
+            return demo
         intake, _, audit = _engines(request.app)
         try:
-            outcome = resolve_case(intake=intake, audit=audit, case_id=case_id)
+            outcome = resolve_case(
+                intake=intake,
+                audit=audit,
+                case_id=case_id,
+                attempt_id=None if demo is None else demo["attempt_id"],
+            )
         except CaseNotFoundError as exc:
             return _error(request, str(exc), 404)
+        if outcome.get("reason") == "attempt-read-only":
+            if wants_json(request):
+                return JSONResponse(
+                    {**outcome, "detail": "attempt-read-only"}, status_code=409
+                )
+            return _error(request, "attempt-read-only", 409)
         if wants_json(request):
-            return JSONResponse(outcome)
+            return JSONResponse(cast(dict[str, Any], outcome))
         if outcome["resolved"]:
             return RedirectResponse(f"/cases/{case_id}", status_code=303)
         query = urlencode({"resolve_refused": str(outcome["reason"])})
