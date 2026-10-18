@@ -151,6 +151,33 @@ make check CORE=/path/to/airflow-dq-agent  # same core selected during setup
 # Or individually: make test; make lint; make typecheck
 ```
 
+### Offline development PDF replay
+
+After setup, run the saved synthetic extraction results without a database or
+model account:
+
+```bash
+.venv/bin/python -m ledgerlens.evaluation replay fixtures/extraction/development/manifest.json
+.venv/bin/python -m ledgerlens.evaluation text fixtures/extraction/development/pdfs/18e73a9c.pdf
+```
+
+The bundle contains 13 development PDFs with opaque IDs, gold field states,
+saved stub outputs and manually calculated [scoring examples](fixtures/extraction/SCORING-EXAMPLES.md).
+Expected exact-record counts are 8/13 for `baseline-stub` and 11/13 for
+`model-stub`; these are authored examples, not observed model performance.
+The command checks frozen PDF/text/output/prompt/schema/scorer hashes, reports
+paired results, definite-field accuracy, state confusion and failures, and
+makes no network calls. Edited artifacts or scoring require a new analysis.
+
+This is the development portion of ticket #2. The ten independently curated
+reserved documents and exposure separation have not been established; no
+held-out score is available. Field extractors, currency-symbol interpretation,
+subtotal/total selection, live model sends and application PDF intake are not
+implemented here. PDF conversion uses the pinned bounded adapter and never
+truncates. Multiple-invoice detection currently recognizes explicit invoice
+headings with distinct IDs; other document structures need additional fixtures.
+Time and memory limits are configured; adversarial exhaustion remains unverified.
+
 The suite covers HTTP journeys over real Postgres plus the installed core, pure
 resolution-rule units, least-privilege and no-leak checks, and one real
 Chromium journey against a live server.

@@ -11,6 +11,8 @@ dependencies = [
     "psycopg[binary]",
     "sqlalchemy",
     "pydantic-settings",
+    "pydantic>=2,<3",
+    "pypdf==6.21.1",
     "pgserver==0.1.4",
 ]
 
