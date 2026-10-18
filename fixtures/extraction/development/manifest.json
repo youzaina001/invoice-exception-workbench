@@ -128,7 +128,7 @@
   },
   "assigned_count": 13,
   "provenance": {
-    "frozen_at": "2026-10-18T11:23:57.132309+00:00",
+    "frozen_at": "2026-10-18T12:42:26.411791+00:00",
     "developers": [
       "Codex builder"
     ],
@@ -138,8 +138,8 @@
     ],
     "reserved_status": "not-established"
   },
-  "source_base": "80f449adfe7df7c181b74581ebac7385163a6252",
-  "scorer_sha256": "bfe037e3fc7ca902fe70fbcbe9a117370655fdf29f3dc34cef97d4e966cedfe5",
+  "source_base": "cc02c126e11220775d63c95eda67cd99ea196948",
+  "scorer_sha256": "2eb071b07cbabcebcb0912f273036099c2d7d7fb9a8a815e01c7978e1ae15dcb",
   "adapter": {
     "pypdf": "6.21.1",
     "strict": true,

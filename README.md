@@ -174,8 +174,11 @@ reserved documents and exposure separation have not been established; no
 held-out score is available. Field extractors, currency-symbol interpretation,
 subtotal/total selection, live model sends and application PDF intake are not
 implemented here. PDF conversion uses the pinned bounded adapter and never
-truncates. Multiple-invoice detection currently recognizes explicit invoice
-headings with distinct IDs; other document structures need additional fixtures.
+truncates. Multiple-invoice detection checks line-anchored invoice IDs throughout
+the document and repeated invoice sections within a page. Repeated same-ID
+headers across pages are treated as continuation; other document structures need
+additional fixtures. Blank pages retain their position. Image pages with no text
+or only a 1–4 digit page number are refused as scans.
 Time and memory limits are configured; adversarial exhaustion remains unverified.
 
 The suite covers HTTP journeys over real Postgres plus the installed core, pure

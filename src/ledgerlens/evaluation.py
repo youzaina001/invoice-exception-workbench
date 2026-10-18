@@ -71,6 +71,9 @@ def read_artifact(root: Path, name: str) -> bytes:
 
 
 def load_json(data: bytes) -> Any:
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"invalid JSON constant: {value}")
+
     def unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for key, value in pairs:
@@ -79,7 +82,9 @@ def load_json(data: bytes) -> Any:
             result[key] = value
         return result
 
-    return json.loads(data, object_pairs_hook=unique_keys)
+    return json.loads(
+        data, object_pairs_hook=unique_keys, parse_constant=reject_constant
+    )
 
 
 def replay(path: Path) -> dict[str, Any]:

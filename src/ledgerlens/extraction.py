@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Annotated, Literal
 
@@ -49,9 +50,10 @@ class Fields(StrictModel):
                 if not field.value:
                     raise ValueError("an identifier value cannot be empty")
         if self.invoice_date.value is not None:
-            self.invoice_date.value = date.fromisoformat(
-                self.invoice_date.value.strip()
-            ).isoformat()
+            value = self.invoice_date.value.strip()
+            if re.fullmatch(r"\d{4}-?W\d{2}", value):
+                raise ValueError("an invoice week date requires a weekday")
+            self.invoice_date.value = date.fromisoformat(value).isoformat()
         if self.currency.value is not None:
             self.currency.value = self.currency.value.strip().upper()
             if self.currency.value not in {"EUR", "USD"}:

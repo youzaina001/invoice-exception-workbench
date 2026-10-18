@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -13,7 +14,14 @@ from typing import Any
 
 import pytest
 from pypdf import PdfWriter
-from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+from pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    IndirectObject,
+    NameObject,
+    NumberObject,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "fixtures/extraction/development/manifest.json"
@@ -35,9 +43,11 @@ def command(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def make_pdf(pages: list[str], *, encrypted: bool = False) -> bytes:
+def make_pdf(
+    pages: list[str], *, encrypted: bool = False, image_pages: tuple[int, ...] = ()
+) -> bytes:
     writer = PdfWriter()
-    for text in pages:
+    for number, text in enumerate(pages, 1):
         page = writer.add_blank_page(width=595, height=842)
         font = DictionaryObject(
             {
@@ -47,9 +57,10 @@ def make_pdf(pages: list[str], *, encrypted: bool = False) -> bytes:
                 NameObject("/Encoding"): NameObject("/WinAnsiEncoding"),
             }
         )
-        page[NameObject("/Resources")] = DictionaryObject(
+        resources = DictionaryObject(
             {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
         )
+        page[NameObject("/Resources")] = resources
         lines = []
         for line in text.splitlines():
             escaped = (
@@ -59,14 +70,52 @@ def make_pdf(pages: list[str], *, encrypted: bool = False) -> bytes:
                 .replace(b")", b"\\)")
             )
             lines.append(b"(" + escaped + b") Tj T*")
+        operators = b"BT /F1 12 Tf 50 780 Td 16 TL\n" + b"\n".join(lines) + b"\nET"
+        if number in image_pages:
+            image = DecodedStreamObject()
+            image.update(
+                {
+                    NameObject("/Type"): NameObject("/XObject"),
+                    NameObject("/Subtype"): NameObject("/Image"),
+                    NameObject("/Width"): NumberObject(1),
+                    NameObject("/Height"): NumberObject(1),
+                    NameObject("/ColorSpace"): NameObject("/DeviceRGB"),
+                    NameObject("/BitsPerComponent"): NumberObject(8),
+                }
+            )
+            image.set_data(b"\0\0\0")
+            resources[NameObject("/XObject")] = DictionaryObject(
+                {
+                    NameObject("/Im0"): writer._add_object(image),
+                }
+            )
+            operators += b"\n/Im0 Do"
         stream = DecodedStreamObject()
-        stream.set_data(b"BT /F1 12 Tf 50 780 Td 16 TL\n" + b"\n".join(lines) + b"\nET")
+        stream.set_data(operators)
         page[NameObject("/Contents")] = stream.flate_encode()
     if encrypted:
         writer.encrypt("test-only")
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
+
+
+def add_form(
+    writer: PdfWriter, data: bytes, resources: DictionaryObject
+) -> IndirectObject:
+    form = DecodedStreamObject()
+    form.update(
+        {
+            NameObject("/Type"): NameObject("/XObject"),
+            NameObject("/Subtype"): NameObject("/Form"),
+            NameObject("/BBox"): ArrayObject(
+                [NumberObject(n) for n in (0, 0, 595, 842)]
+            ),
+            NameObject("/Resources"): resources,
+        }
+    )
+    form.set_data(data)
+    return writer._add_object(form.flate_encode())
 
 
 def copy_bundle(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
@@ -171,16 +220,27 @@ def test_replay_refuses_changed_first_output_bytes(tmp_path: Path) -> None:
     assert result.stdout == ""
 
 
-def test_pdf_refuses_two_explicit_invoice_sections(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "pages",
+    [
+        ["INVOICE\nInvoice ID: A-001\nINVOICE\nInvoice ID: B-002\n"],
+        ["INVOICE\nInvoice ID: A-001\nInvoice ID: B-002\n"],
+        ["Invoice ID: A-001\nINVOICE\nInvoice ID: B-002\n"],
+        ["INVOICE\nInvoice ID: A-001\n", "Invoice ID: B-002\n"],
+        [
+            "COMMERCIAL INVOICE\nInvoice ID: A-001\n"
+            "COMMERCIAL INVOICE\nInvoice ID: B-002\n"
+        ],
+        [
+            "Invoice ID: A-001\nINVOICE\nInvoice total: 1.00 EUR\n"
+            "Invoice ID: B-002\nINVOICE\nInvoice total: 2.00 USD\n"
+        ],
+        ["Invoice ID: A-001\nInvoice ID: B-002\n"],
+    ],
+)
+def test_pdf_refuses_distinct_invoice_ids(tmp_path: Path, pages: list[str]) -> None:
     pdf = tmp_path / "opaque.pdf"
-    pdf.write_bytes(
-        make_pdf(
-            [
-                "INVOICE\nInvoice ID: A-001\nInvoice total: 1.00 EUR\n"
-                "INVOICE\nInvoice ID: B-002\nInvoice total: 2.00 USD\n"
-            ]
-        )
-    )
+    pdf.write_bytes(make_pdf(pages))
     result = command("text", str(pdf))
     assert result.returncode == 2
     assert json.loads(result.stdout) == {
@@ -188,6 +248,236 @@ def test_pdf_refuses_two_explicit_invoice_sections(tmp_path: Path) -> None:
         "status": "failure",
         "stage": "pdf",
         "code": "multiple_invoices",
+    }
+
+
+def test_replay_cannot_score_a_second_invoice_hidden_before_a_heading(
+    tmp_path: Path,
+) -> None:
+    bundle, manifest, doc_id = single_document_bundle(tmp_path)
+    doc = manifest["documents"][0]
+    text = (
+        "Invoice ID: Inv-0001\nINVOICE\nInvoice total: 125.00 EUR\n"
+        "Invoice ID: B-002\nINVOICE\nInvoice total: 2.00 USD\n"
+    )
+    (bundle / doc["pdf"]).write_bytes(make_pdf([text]))
+    doc["pages"] = [text]
+    doc["text_sha256"] = hashlib.sha256(("[page 1]\n" + text).encode()).hexdigest()
+    gold = json.loads((bundle / manifest["gold"]).read_text())
+    for name in manifest["arms"].values():
+        (bundle / name).write_text(json.dumps(gold))
+    result = command("replay", str(freeze_bundle(bundle, manifest)))
+    assert result.returncode == 2
+    assert f"PDF refused: {doc_id}/multiple_invoices" in result.stderr
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("heading", ["INVOICE", "COMMERCIAL INVOICE"])
+def test_pdf_refuses_repeated_invoice_sections_on_one_page(
+    tmp_path: Path, heading: str
+) -> None:
+    pdf = tmp_path / "opaque.pdf"
+    pdf.write_bytes(
+        make_pdf(
+            [
+                f"{heading}\nInvoice ID: A-001\nInvoice total: 1.00 EUR\n"
+                f"{heading}\nInvoice ID: A-001\nInvoice total: 2.00 USD\n"
+            ]
+        )
+    )
+    result = command("text", str(pdf))
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["code"] == "multiple_invoices"
+
+
+def test_pdf_keeps_repeated_headers_on_a_multipage_invoice(tmp_path: Path) -> None:
+    pdf = tmp_path / "opaque.pdf"
+    pages = [
+        "INVOICE\nInvoice ID: A-001\nItems continued on next page.\n",
+        "INVOICE\nInvoice ID: A-001\nInvoice total: 1.00 EUR\n"
+        "See also Invoice number: B-002\n",
+    ]
+    pdf.write_bytes(make_pdf(pages))
+    result = command("text", str(pdf))
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["pages"] == pages
+
+
+def test_pdf_keeps_blank_pages_in_order_with_digital_text(tmp_path: Path) -> None:
+    pdf = tmp_path / "opaque.pdf"
+    pdf.write_bytes(
+        make_pdf(["", "Invoice total: 1.00 EUR\n", "", "Terms and conditions.\n", ""])
+    )
+    result = command("text", str(pdf))
+    assert result.returncode == 0, result.stdout + result.stderr
+    converted = json.loads(result.stdout)
+    assert converted["pages"] == [
+        "\n",
+        "Invoice total: 1.00 EUR\n",
+        "\n",
+        "Terms and conditions.\n",
+        "\n",
+    ]
+    assert converted["text"] == (
+        "[page 1]\n\n[page 2]\nInvoice total: 1.00 EUR\n"
+        "[page 3]\n\n[page 4]\nTerms and conditions.\n[page 5]\n\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("pages", "image_pages"),
+    [
+        ([""], (1,)),
+        (["1"], (1,)),
+        ([" 1234 "], (1,)),
+        (["Invoice total: 1.00 EUR\n", ""], (2,)),
+        (["Invoice total: 1.00 EUR\n", "1"], (2,)),
+    ],
+)
+def test_pdf_refuses_image_pages_with_no_text_except_a_page_number(
+    tmp_path: Path, pages: list[str], image_pages: tuple[int, ...]
+) -> None:
+    pdf = tmp_path / "opaque.pdf"
+    pdf.write_bytes(make_pdf(pages, image_pages=image_pages))
+    result = command("text", str(pdf))
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["code"] == "no_digital_text"
+
+
+def test_pdf_keeps_digital_invoice_text_with_an_image_logo(tmp_path: Path) -> None:
+    pdf = tmp_path / "opaque.pdf"
+    pages = ["INVOICE\nInvoice ID: A-001\nInvoice total: 1.00 EUR\n"]
+    pdf.write_bytes(make_pdf(pages, image_pages=(1,)))
+    result = command("text", str(pdf))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["pages"] == pages
+
+
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("payload_size", [600_000, 1_200_000])
+def test_pdf_bounds_form_streams_without_recounting_aliases_or_cycles(
+    tmp_path: Path, nested: bool, payload_size: int
+) -> None:
+    writer = PdfWriter(clone_from=io.BytesIO(make_pdf(["Invoice total: 1.00 EUR\n"])))
+    form = add_form(writer, b"%" + b"x" * payload_size + b"\n", DictionaryObject())
+    form_object = form.get_object()
+    assert isinstance(form_object, DictionaryObject)
+    form_object[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/XObject"): DictionaryObject({NameObject("/Self"): form})}
+    )
+    if nested:
+        form = add_form(
+            writer,
+            b"/Inner Do",
+            DictionaryObject(
+                {NameObject("/XObject"): DictionaryObject({NameObject("/Inner"): form})}
+            ),
+        )
+    page = writer.pages[0]
+    resources = page["/Resources"]
+    assert isinstance(resources, DictionaryObject)
+    resources[NameObject("/XObject")] = DictionaryObject(
+        {
+            NameObject("/Fm0"): form,
+            NameObject("/Alias"): form,
+        }
+    )
+    stream = DecodedStreamObject()
+    contents = page.get_contents()
+    assert contents is not None
+    stream.set_data(contents.get_data() + b"\n/Fm0 Do\n/Alias Do")
+    page[NameObject("/Contents")] = stream.flate_encode()
+    pdf = tmp_path / "opaque.pdf"
+    with pdf.open("wb") as output:
+        writer.write(output)
+    result = command("text", str(pdf))
+    if payload_size > 1_048_576:
+        assert result.returncode == 2
+        assert json.loads(result.stdout)["code"] == "expanded_text_limit"
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["pages"] == ["Invoice total: 1.00 EUR\n"]
+
+
+@pytest.mark.parametrize("scan_back", [False, True])
+def test_pdf_checks_images_in_a_form_shared_by_pages(
+    tmp_path: Path, scan_back: bool
+) -> None:
+    pages = ["Invoice total: 1.00 EUR\n"] + (["1\n"] if scan_back else [])
+    writer = PdfWriter(clone_from=io.BytesIO(make_pdf(pages, image_pages=(1, 2))))
+    resources = writer.pages[0]["/Resources"]
+    assert isinstance(resources, DictionaryObject)
+    form = add_form(
+        writer,
+        b"/Im0 Do",
+        DictionaryObject({NameObject("/XObject"): resources["/XObject"]}),
+    )
+    for page in writer.pages:
+        resources = page["/Resources"]
+        assert isinstance(resources, DictionaryObject)
+        resources[NameObject("/XObject")] = DictionaryObject({NameObject("/Im0"): form})
+    pdf = tmp_path / "opaque.pdf"
+    with pdf.open("wb") as output:
+        writer.write(output)
+    result = command("text", str(pdf))
+    if scan_back:
+        assert result.returncode == 2
+        assert json.loads(result.stdout)["code"] == "no_digital_text"
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["pages"] == pages
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "code"),
+    [
+        (1, "Traceback: worker crashed", "corrupt"),
+        (
+            1,
+            '{"version":"1","status":"failure","stage":"pdf","code":"corrupt"}',
+            "corrupt",
+        ),
+        (
+            1,
+            '{"version":"1","status":"failure","stage":"pdf","code":"expanded_text_limit"}',
+            "expanded_text_limit",
+        ),
+        (1, "{}", "corrupt"),
+        (-signal.SIGSEGV, "", "corrupt"),
+        (-signal.SIGKILL, "", "resource_limit"),
+        (-signal.SIGXCPU, "", "resource_limit"),
+    ],
+)
+def test_text_command_classifies_a_nonzero_pdf_worker_exit(
+    tmp_path: Path, returncode: int, stdout: str, code: str
+) -> None:
+    pdf = tmp_path / "opaque.pdf"
+    pdf.write_bytes(make_pdf(["Invoice total: 1.00 EUR\n"]))
+    # Inject an OS process result; no real PDF is claimed to crash the worker.
+    script = """
+import sys
+from subprocess import CompletedProcess
+from unittest.mock import patch
+from ledgerlens.evaluation import main
+worker = CompletedProcess([], int(sys.argv[2]), sys.argv[3].encode())
+sys.argv = ['ledgerlens.evaluation', 'text', sys.argv[1]]
+with patch('ledgerlens.pdf_text.subprocess.run', return_value=worker):
+    raise SystemExit(main())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(pdf), str(returncode), stdout],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert json.loads(result.stdout) == {
+        "version": "1",
+        "status": "failure",
+        "stage": "pdf",
+        "code": code,
     }
 
 
@@ -205,6 +495,21 @@ def test_replay_refuses_duplicate_output_keys_even_in_a_new_analysis(
     result = command("replay", str(freeze_bundle(bundle, manifest)))
     assert result.returncode == 2
     assert "duplicate JSON key" in result.stderr
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_replay_refuses_nonstandard_json_constants(
+    tmp_path: Path, constant: str
+) -> None:
+    bundle, manifest, doc_id = single_document_bundle(tmp_path)
+    raw_path = bundle / manifest["arms"]["model-stub"]
+    raw = json.loads(raw_path.read_text())
+    raw[doc_id]["fields"]["amount_minor"]["value"] = float(constant)
+    raw_path.write_text(json.dumps(raw))
+    result = command("replay", str(freeze_bundle(bundle, manifest)))
+    assert result.returncode == 2
+    assert "invalid JSON constant" in result.stderr
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize(
@@ -247,8 +552,9 @@ def test_invalid_saved_result_counts_as_a_failure(
     }
 
 
+@pytest.mark.parametrize("invoice_date", ["20261018", "2026-W42-7", " 2026W427 "])
 def test_normalization_preserves_identifier_case_and_leading_zeroes(
-    tmp_path: Path,
+    tmp_path: Path, invoice_date: str
 ) -> None:
     bundle, manifest, doc_id = single_document_bundle(tmp_path)
     raw_path = bundle / manifest["arms"]["model-stub"]
@@ -256,7 +562,7 @@ def test_normalization_preserves_identifier_case_and_leading_zeroes(
     fields = raw[doc_id]["fields"]
     fields["invoice_id"]["value"] = "  Inv-0001  "
     fields["supplier_id"]["value"] = "\tSup-0042 "
-    fields["invoice_date"]["value"] = "20261018"
+    fields["invoice_date"]["value"] = invoice_date
     fields["currency"]["value"] = " eur "
     start = manifest["documents"][0]["pages"][0].index("Inv-0001")
     fields["invoice_id"]["evidence"] = [{"page": 1, "start": start, "end": start + 8}]
@@ -270,6 +576,29 @@ def test_normalization_preserves_identifier_case_and_leading_zeroes(
     result = command("replay", str(freeze_bundle(bundle, manifest)))
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["arms"]["model-stub"]["primary"]["correct"] == 0
+
+
+@pytest.mark.parametrize(
+    "invoice_date", ["2026-W42", "2026W42", " 2026-W42 ", "\t2026W42 "]
+)
+def test_incomplete_week_date_cannot_exact_match_its_monday(
+    tmp_path: Path, invoice_date: str
+) -> None:
+    bundle, manifest, doc_id = single_document_bundle(tmp_path)
+    gold_path = bundle / manifest["gold"]
+    gold = json.loads(gold_path.read_text())
+    gold[doc_id]["fields"]["invoice_date"]["value"] = "2026-10-12"
+    gold_path.write_text(json.dumps(gold))
+    raw_path = bundle / manifest["arms"]["model-stub"]
+    raw = json.loads(raw_path.read_text())
+    raw[doc_id]["fields"]["invoice_date"]["value"] = invoice_date
+    raw_path.write_text(json.dumps(raw))
+    result = command("replay", str(freeze_bundle(bundle, manifest)))
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["arms"]["model-stub"]["primary"] == {"correct": 0, "total": 1}
+    assert report["arms"]["model-stub"]["failures"] == {"validate/invalid_result": 1}
+    assert report["paired"][doc_id]["model-stub"]["exact"] is False
 
 
 def test_absent_state_error_na_denominator_and_honest_tie(tmp_path: Path) -> None:

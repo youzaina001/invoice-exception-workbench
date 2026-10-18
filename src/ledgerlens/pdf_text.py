@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import re
+import signal
 import subprocess
 import sys
 from typing import Any, Literal
@@ -63,8 +64,13 @@ def read_pdf(data: bytes) -> PDFText | Failure:
         )
     except subprocess.TimeoutExpired:
         return refused("time_limit")
-    if child.returncode:
+    if child.returncode in {-signal.SIGKILL, -signal.SIGXCPU}:
         return refused("resource_limit")
+    if child.returncode:
+        try:
+            return Failure.model_validate_json(child.stdout)
+        except ValueError:
+            return refused("corrupt")
     raw = json.loads(child.stdout)
     if raw.get("status") == "failure":
         return Failure.model_validate(raw)
@@ -94,11 +100,37 @@ def worker() -> PDFText | Failure:
             return refused("page_limit")
         pages = []
         expanded = 0
+        counted_xobjects: set[int] = set()
         for page in reader.pages:
             contents = page.get_contents()
             expanded += len(contents.get_data()) if contents is not None else 0
             if expanded > MAX_EXPANDED_BYTES:
                 return refused("expanded_text_limit")
+            resources = [page.get("/Resources")]
+            seen_on_page: set[int] = set()
+            has_image = False
+            while resources:
+                page_resources = resources.pop()
+                if page_resources is None:
+                    continue
+                xobjects = page_resources.get_object().get("/XObject")
+                if xobjects is None:
+                    continue
+                for reference in xobjects.get_object().values():
+                    obj = reference.get_object()
+                    identity = id(obj)
+                    if identity in seen_on_page:
+                        continue
+                    seen_on_page.add(identity)
+                    if obj.get("/Subtype") == "/Image":
+                        has_image = True
+                    if identity not in counted_xobjects:
+                        counted_xobjects.add(identity)
+                        expanded += len(obj.get_data())
+                        if expanded > MAX_EXPANDED_BYTES:
+                            return refused("expanded_text_limit")
+                    if obj.get("/Subtype") == "/Form":
+                        resources.append(obj.get("/Resources"))
             text = (
                 page.extract_text(
                     orientations=(0, 90, 180, 270),
@@ -108,30 +140,32 @@ def worker() -> PDFText | Failure:
                 .replace("\r\n", "\n")
                 .replace("\r", "\n")
             )
-            if not text.strip():
+            # shortcut: empty/folio text marks scans; widen with scan fixtures.
+            if has_image and (
+                not text.strip() or re.fullmatch(r"[0-9]{1,4}", text.strip())
+            ):
                 return refused("no_digital_text")
             pages.append(text if text.endswith("\n") else text + "\n")
+        if not any(text.strip() for text in pages):
+            return refused("no_digital_text")
         tagged = "".join(f"[page {i}]\n{text}" for i, text in enumerate(pages, 1))
         if len(tagged.encode("utf-8")) > MAX_TEXT_BYTES:
             return refused("text_limit")
-        # shortcut: detect explicit invoice sections; add other markers with fixtures.
-        sections = re.split(
-            r"(?im)^\s*(?:synthetic\s+)?(?:tax\s+)?invoice[ \t]*$", tagged
-        )[1:]
-        section_ids = {
-            matches[0].strip()
-            for section in sections
-            if len(
-                matches := re.findall(
-                    r"(?im)^[ \t]*invoice[ \t]+(?:id|number|no\.?|#)"
-                    r"[ \t]*:[ \t]*([^\n]+)",
-                    section,
-                )
-            )
-            == 1
-        }
-        if len(section_ids) > 1:
+        invoice_id = re.compile(
+            r"(?im)^[ \t]*invoice[ \t]+(?:id|number|no\.?|#)"
+            r"[ \t]*:[ \t]*([^\n]+)"
+        )
+        invoice_ids = {value.strip() for value in invoice_id.findall(tagged)}
+        if len(invoice_ids) > 1:
             return refused("multiple_invoices")
+        # shortcut: same-ID page headers imply continuation; widen with fixtures.
+        for page_text in pages:
+            sections = re.split(
+                r"(?im)^[ \t]*(?:(?:synthetic|tax|commercial)[ \t]+)*invoice[ \t]*$",
+                page_text,
+            )
+            if sum(bool(invoice_id.search(section)) for section in sections) > 1:
+                return refused("multiple_invoices")
         return PDFText(
             version="1",
             status="text",
