@@ -7,7 +7,7 @@ runs the PostgreSQL and Chromium journeys, lint/format checks, and strict typing
 The core source selected for setup must also be selected for checks.
 
 Pytest rejects a product package imported from another checkout before collecting
-tests. Its first output line identifies the interpreter, LedgerLens source,
+tests. Its first output line identifies the interpreter, Invoice Triage source,
 Airflow core source, and core Git revision (or `unavailable` for an installation
 without Git metadata). Make additionally requires the selected `CORE` source.
 Direct pytest retains the product guard and reports the actual dependency; add

@@ -21,7 +21,7 @@ db:
 	"$(VENV)/bin/python" scripts/dev_pg.py
 
 run:
-	"$(VENV)/bin/uvicorn" ledgerlens.app:app --host 127.0.0.1 --port $(PORT)
+	"$(VENV)/bin/uvicorn" invoice_triage.app:app --host 127.0.0.1 --port $(PORT)
 
 test:
 	"$(VENV)/bin/python" -m pytest -q --tb=short '--core-checkout=$(CORE)'

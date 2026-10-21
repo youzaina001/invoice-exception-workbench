@@ -16,10 +16,10 @@ from airflow_dq_agent.quality.suite import run_quality_suite
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine, RowMapping
 
-from ledgerlens.audit import audit_labels, read_audit_events
-from ledgerlens.core_integration import AMOUNT_CHECK_ID, ensure_registered
-from ledgerlens.request_scope import current_attempt, current_reviewer, set_attempt
-from ledgerlens.resolution import (
+from invoice_triage.audit import audit_labels, read_audit_events
+from invoice_triage.core_integration import AMOUNT_CHECK_ID, ensure_registered
+from invoice_triage.request_scope import current_attempt, current_reviewer, set_attempt
+from invoice_triage.resolution import (
     ResolutionDecision,
     ResolutionRequest,
     decide_resolution,
@@ -30,6 +30,7 @@ REQUIRED_COLUMNS = ("invoice_id", "supplier_id", "invoice_date", "currency", "am
 # Serializes replacement of the singleton staging projection. Held as a
 # transaction-scoped advisory lock, so it also works when staging is empty
 # (SELECT FOR UPDATE cannot lock zero rows) and releases on commit/rollback.
+# Keep lock identifiers stable across package renames so running versions agree.
 _STAGING_LOCK_KEY = (
     int.from_bytes(hashlib.sha256(b"ledgerlens:staging").digest()[:8], "big") >> 1
 )

@@ -1,4 +1,4 @@
-# Select hosted services for LedgerLens
+# Select hosted services for Invoice Triage
 
 Status: accepted 2026-10-03. The workbench code for the hosted demonstration is in this branch. No deployment is claimed. The default local runtime remains the localhost workflow in `README.md`. Provider limits below are the decision's historical assumptions, not a current availability guarantee; recheck them before provisioning.
 

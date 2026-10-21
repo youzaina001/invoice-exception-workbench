@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from playwright.sync_api import expect, sync_playwright
 
-from ledgerlens.local_pg import find_free_port
+from invoice_triage.local_pg import find_free_port
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "fixtures"
@@ -92,7 +92,7 @@ def test_operator_journey_in_browser(live_server: str) -> None:
         try:
             page = browser.new_page()
             page.goto(live_server)
-            expect(page.get_by_role("heading", name="LedgerLens")).to_be_visible()
+            expect(page.get_by_role("heading", name="Invoice Triage")).to_be_visible()
             page.get_by_role("button", name="Run checks on current submission").click()
             expect(page.get_by_role("alert")).to_contain_text("no submission staged")
             page.get_by_role(

@@ -1,5 +1,7 @@
 """Exercise pytest's public preflight before test collection."""
 
+import importlib.metadata
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -12,6 +14,11 @@ import pytest
 @pytest.fixture(autouse=True)
 def reset_db() -> None:
     """These subprocess checks do not use a database."""
+
+
+def test_public_package_name() -> None:
+    assert importlib.util.find_spec("invoice_triage") is not None
+    assert importlib.metadata.metadata("invoice-triage")["Name"] == "invoice-triage"
 
 
 def run_checkout(
@@ -27,7 +34,7 @@ def run_checkout(
     shutil.copyfile(Path(__file__).with_name("conftest.py"), tests / "conftest.py")
     source = (tmp_path / "old checkout" if wrong_source else checkout) / "src"
     core_source = checkout / ".venv/lib/site-packages" if wheel_core else source
-    for package in (source / "ledgerlens", core_source / "airflow_dq_agent"):
+    for package in (source / "invoice_triage", core_source / "airflow_dq_agent"):
         package.mkdir(parents=True)
         (package / "__init__.py").write_text("")
     if wheel_core:
@@ -86,7 +93,7 @@ def test_current_checkout_with_spaces_reports_both_sources(tmp_path: Path) -> No
     result, marker = run_checkout(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert marker.exists()
-    assert "current checkout/src/ledgerlens/__init__.py" in result.stdout
+    assert "current checkout/src/invoice_triage/__init__.py" in result.stdout
     assert "current checkout/src/airflow_dq_agent/__init__.py" in result.stdout
     assert "core_revision=unavailable" in result.stdout
     assert sys.executable in result.stdout

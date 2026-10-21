@@ -1,4 +1,4 @@
-name: LedgerLens checks
+name: Invoice Triage checks
 
 on:
   push:

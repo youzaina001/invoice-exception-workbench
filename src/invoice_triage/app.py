@@ -1,4 +1,4 @@
-"""LedgerLens FastAPI application: JSON actions plus server-rendered pages."""
+"""Invoice Triage FastAPI application: JSON actions plus server-rendered pages."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.engine import Engine
 
-from ledgerlens.auth import verified_reviewer
-from ledgerlens.request_scope import (
+from invoice_triage.auth import verified_reviewer
+from invoice_triage.request_scope import (
     activate_connection_scope,
     bind_scope,
     current_attempt,
@@ -23,8 +23,8 @@ from ledgerlens.request_scope import (
     reset_scope,
     set_attempt,
 )
-from ledgerlens.resolution import refusal_guidance
-from ledgerlens.services import (
+from invoice_triage.resolution import refusal_guidance
+from invoice_triage.services import (
     AttemptNotFoundError,
     AttemptReadOnlyError,
     CaseNotFoundError,
@@ -41,7 +41,7 @@ from ledgerlens.services import (
     run_current_checks,
     start_fresh_attempt,
 )
-from ledgerlens.settings import Settings
+from invoice_triage.settings import Settings
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -178,7 +178,7 @@ def create_app(
 ) -> FastAPI:
     activate_connection_scope()
     resolved = settings or Settings()
-    app = FastAPI(title="LedgerLens", lifespan=lifespan)
+    app = FastAPI(title="Invoice Triage", lifespan=lifespan)
     app.state.settings = resolved
     app.state.intake_engine = (
         make_engine(resolved.intake_dsn) if resolved.intake_dsn else None
