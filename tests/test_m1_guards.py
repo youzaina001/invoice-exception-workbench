@@ -11,7 +11,7 @@ from airflow_dq_agent.warehouse.db import make_engine
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from ledgerlens.app import MAX_UPLOAD_BYTES
+from invoice_triage.app import MAX_UPLOAD_BYTES
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -72,7 +72,7 @@ def test_errored_check_opens_case_and_blocks_resolve(
     import polars as pl
     from airflow_dq_agent.quality.suite import run_suite_on_frames
 
-    import ledgerlens.services as services
+    import invoice_triage.services as services
 
     _ingest(client, api_headers, "missing_amount.csv")
     monkeypatch.setattr(

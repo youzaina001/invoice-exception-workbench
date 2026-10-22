@@ -10,8 +10,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from ledgerlens.extraction import RESULT, Failure, StrictModel, Success, validate_result
-from ledgerlens.pdf_text import ADAPTER, MAX_PDF_BYTES, PDFText, read_pdf
+from invoice_triage.extraction import (
+    RESULT,
+    Failure,
+    StrictModel,
+    Success,
+    validate_result,
+)
+from invoice_triage.pdf_text import ADAPTER, MAX_PDF_BYTES, PDFText, read_pdf
 
 
 class Document(StrictModel):
@@ -25,15 +31,25 @@ class Document(StrictModel):
 class Provenance(StrictModel):
     frozen_at: str
     developers: list[str]
-    curator: None
+    curator: str | None
     exposure: list[str]
-    reserved_status: Literal["not-established"]
+    reserved_status: Literal["not-established", "established"]
+
+
+class SavedRun(StrictModel):
+    state: str
+    seal: str
+    raw_files: dict[str, str]
+    model_arm: str
+    baseline_arm: str
+    deterministic_sha256: str
+    layout: str
 
 
 class Manifest(StrictModel):
     version: Literal["1"]
-    scope: Literal["development"]
-    kind: Literal["offline-stub"]
+    scope: Literal["development", "reserved"]
+    kind: Literal["offline-stub", "first-outputs"]
     documents: list[Document]
     gold: str
     arms: dict[str, str]
@@ -45,6 +61,7 @@ class Manifest(StrictModel):
     prompt: str
     schema_file: str
     hashes: dict[str, str]
+    run: SavedRun | None = None
 
 
 def scorer_identity() -> str:
@@ -52,7 +69,13 @@ def scorer_identity() -> str:
     return hashlib.sha256(
         b"".join(
             (root / name).read_bytes()
-            for name in ("evaluation.py", "extraction.py", "pdf_text.py")
+            for name in (
+                "evaluation.py",
+                "extraction.py",
+                "pdf_text.py",
+                "comparison_evidence.py",
+                "deterministic.py",
+            )
         )
     ).hexdigest()
 
@@ -87,7 +110,8 @@ def load_json(data: bytes) -> Any:
     )
 
 
-def replay(path: Path) -> dict[str, Any]:
+def load_bundle(path: Path) -> tuple[Manifest, dict[str, bytes], dict[str, Any] | None]:
+    """Verify frozen inputs without parsing labels or computing a score."""
     root = path.resolve().parent
     manifest_bytes = read_artifact(root, path.name)
     manifest = Manifest.model_validate(load_json(manifest_bytes))
@@ -109,6 +133,14 @@ def replay(path: Path) -> dict[str, Any]:
         *manifest.arms.values(),
         *(doc.pdf for doc in manifest.documents),
     }
+    if manifest.run is not None:
+        references.update(
+            (manifest.run.state, manifest.run.seal, *manifest.run.raw_files.values())
+        )
+    elif manifest.kind != "offline-stub" or manifest.scope != "development":
+        raise ValueError(
+            "reserved or first-output analysis needs retained runner evidence"
+        )
     if set(manifest.hashes) != references:
         raise ValueError("hash inventory must match exactly the referenced artifacts")
     artifacts = {}
@@ -122,16 +154,44 @@ def replay(path: Path) -> dict[str, Any]:
     for doc in manifest.documents:
         converted = read_pdf(artifacts[doc.pdf])
         if not isinstance(converted, PDFText):
+            failure_hash = hashlib.sha256(
+                json.dumps(
+                    converted.model_dump(mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            if (
+                manifest.run is not None
+                and doc.pages == []
+                and doc.text_sha256 == failure_hash
+            ):
+                continue
             raise ValueError(f"PDF refused: {doc.id}/{converted.code}")
         if converted.pages != doc.pages or converted.text_sha256 != doc.text_sha256:
             raise ValueError("canonical text differs from the frozen analysis")
     ids = {doc.id for doc in manifest.documents}
     if len(ids) != len(manifest.documents):
         raise ValueError("duplicate document IDs")
+    raw_arms = {arm: load_json(artifacts[name]) for arm, name in manifest.arms.items()}
+    if any(set(raw) != ids for raw in raw_arms.values()):
+        raise ValueError("both arms must cover exactly the assigned documents")
+    run_evidence = None
+    if manifest.run is not None:
+        from invoice_triage.comparison_evidence import check_run
+
+        run_evidence = check_run(manifest, artifacts, raw_arms)
+    return manifest, artifacts, run_evidence
+
+
+def replay(path: Path) -> dict[str, Any]:
+    manifest, artifacts, run_evidence = load_bundle(path)
+    manifest_bytes = read_artifact(path.parent, path.name)
+    identity = scorer_identity()
     gold_raw = load_json(artifacts[manifest.gold])
     raw_arms = {arm: load_json(artifacts[name]) for arm, name in manifest.arms.items()}
-    if set(gold_raw) != ids or any(set(raw) != ids for raw in raw_arms.values()):
-        raise ValueError("gold and both arms must cover exactly the assigned documents")
+    if set(gold_raw) != {doc.id for doc in manifest.documents}:
+        raise ValueError("gold must cover exactly the assigned documents")
     gold: dict[str, Success] = {}
     for doc in manifest.documents:
         parsed = validate_result(gold_raw[doc.id], doc.pages)
@@ -203,6 +263,7 @@ def replay(path: Path) -> dict[str, Any]:
         "scorer_sha256": identity,
         "provenance": manifest.provenance.model_dump(),
         "source_base": manifest.source_base,
+        **({"run": run_evidence} if run_evidence is not None else {}),
         "arms": arms,
         "paired": paired,
         "comparison": (

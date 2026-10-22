@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ledgerlens.core_integration import AMOUNT_CHECK_ID
-from ledgerlens.resolution import ResolutionRequest, decide_resolution
+from invoice_triage.core_integration import AMOUNT_CHECK_ID
+from invoice_triage.resolution import ResolutionRequest, decide_resolution
 
 
 def fresh_pass() -> ResolutionRequest:

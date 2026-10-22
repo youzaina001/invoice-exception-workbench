@@ -16,10 +16,10 @@ from airflow_dq_agent.quality.suite import run_quality_suite
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine, RowMapping
 
-from ledgerlens.audit import audit_labels, read_audit_events
-from ledgerlens.core_integration import AMOUNT_CHECK_ID, ensure_registered
-from ledgerlens.request_scope import current_attempt, current_reviewer, set_attempt
-from ledgerlens.resolution import (
+from invoice_triage.audit import audit_labels, read_audit_events
+from invoice_triage.core_integration import AMOUNT_CHECK_ID, ensure_registered
+from invoice_triage.request_scope import current_attempt, current_reviewer, set_attempt
+from invoice_triage.resolution import (
     ResolutionDecision,
     ResolutionRequest,
     decide_resolution,
@@ -30,6 +30,7 @@ REQUIRED_COLUMNS = ("invoice_id", "supplier_id", "invoice_date", "currency", "am
 # Serializes replacement of the singleton staging projection. Held as a
 # transaction-scoped advisory lock, so it also works when staging is empty
 # (SELECT FOR UPDATE cannot lock zero rows) and releases on commit/rollback.
+# Keep lock identifiers stable across package renames so running versions agree.
 _STAGING_LOCK_KEY = (
     int.from_bytes(hashlib.sha256(b"ledgerlens:staging").digest()[:8], "big") >> 1
 )
@@ -97,6 +98,17 @@ def parse_submission_csv(data: bytes, *, filename: str) -> InvoiceRow:
     except ValueError as exc:
         raise ValueError(f"{filename}: invoice_date must be YYYY-MM-DD") from exc
     raw_amount = (row["amount"] or "").strip()
+    amount_minor = parse_amount_minor(raw_amount, filename=filename)
+    return InvoiceRow(
+        invoice_id=invoice_id,
+        supplier_id=supplier_id,
+        invoice_date=invoice_date,
+        currency=currency,
+        amount_minor=amount_minor,
+    )
+
+
+def parse_amount_minor(raw_amount: str, *, filename: str) -> int | None:
     if not raw_amount:
         amount_minor: int | None = None
     else:
@@ -131,13 +143,7 @@ def parse_submission_csv(data: bytes, *, filename: str) -> InvoiceRow:
             raise ValueError(
                 f"{filename}: amount {raw_amount!r} exceeds supported range"
             )
-    return InvoiceRow(
-        invoice_id=invoice_id,
-        supplier_id=supplier_id,
-        invoice_date=invoice_date,
-        currency=currency,
-        amount_minor=amount_minor,
-    )
+    return amount_minor
 
 
 def snapshot_row(row: InvoiceRow) -> str:
@@ -282,88 +288,97 @@ def ingest_submission(
 ) -> dict[str, object]:
     row = parse_submission_csv(data, filename=filename)
     content_hash = hashlib.sha256(data).hexdigest()
+    with engine.begin() as conn:
+        return ingest_invoice_row(
+            conn, filename=filename, row=row, content_hash=content_hash
+        )
+
+
+def ingest_invoice_row(
+    conn: Connection, *, filename: str, row: InvoiceRow, content_hash: str
+) -> dict[str, object]:
+    """Store a validated row in the caller's transaction and existing staging lock."""
     invoice_ref = row.invoice_id
     snapshot = snapshot_row(row)
-    with engine.begin() as conn:
-        _lock_staging(conn)
-        extra, extra_params = _attempt_sql(current_attempt())
-        existing = (
-            conn.execute(
-                text(
-                    "SELECT id, version FROM wb.submissions"
-                    " WHERE invoice_ref = :ref AND content_hash = :hash" + extra
-                ),
-                {"ref": invoice_ref, "hash": content_hash, **extra_params},
-            )
-            .mappings()
-            .first()
-        )
-        if existing is not None:
-            made_current = _restage_if_latest(
-                conn,
-                invoice_ref,
-                str(existing["id"]),
-                int(existing["version"]),
-            )
-            return _submission_payload(
-                str(existing["id"]),
-                invoice_ref,
-                int(existing["version"]),
-                True,
-                made_current,
-            )
-        prior = (
-            conn.execute(
-                text(
-                    "SELECT COALESCE(MAX(version), 0) AS max_version"
-                    " FROM wb.submissions WHERE invoice_ref = :ref" + extra
-                ),
-                {"ref": invoice_ref, **extra_params},
-            )
-            .mappings()
-            .first()
-        )
-        version = int(prior["max_version"]) + 1 if prior else 1
-        submission_id = uuid4().hex
+    _lock_staging(conn)
+    extra, extra_params = _attempt_sql(current_attempt())
+    existing = (
         conn.execute(
             text(
-                "INSERT INTO wb.submissions"
-                " (id, invoice_ref, version, content_hash, filename)"
-                " VALUES (:id, :ref, :version, :hash, :filename)"
+                "SELECT id, version FROM wb.submissions"
+                " WHERE invoice_ref = :ref AND content_hash = :hash" + extra
             ),
-            {
-                "id": submission_id,
-                "ref": invoice_ref,
-                "version": version,
-                "hash": content_hash,
-                "filename": filename,
-            },
+            {"ref": invoice_ref, "hash": content_hash, **extra_params},
         )
-        conn.execute(
-            text(
-                "INSERT INTO wb.submission_rows"
-                " (submission_id, invoice_id, supplier_id, invoice_date,"
-                " currency, amount_minor)"
-                " VALUES (:sid, :iid, :sup, :dt, :cur, :amt)"
-            ),
-            {
-                "sid": submission_id,
-                "iid": row.invoice_id,
-                "sup": row.supplier_id,
-                "dt": row.invoice_date,
-                "cur": row.currency,
-                "amt": row.amount_minor,
-            },
-        )
-        _replace_staging(
+        .mappings()
+        .first()
+    )
+    if existing is not None:
+        made_current = _restage_if_latest(
             conn,
-            invoice_ref=invoice_ref,
-            submission_id=submission_id,
-            version=version,
-            row=row,
-            snapshot=snapshot,
+            invoice_ref,
+            str(existing["id"]),
+            int(existing["version"]),
         )
-        return _submission_payload(submission_id, invoice_ref, version, False, True)
+        return _submission_payload(
+            str(existing["id"]),
+            invoice_ref,
+            int(existing["version"]),
+            True,
+            made_current,
+        )
+    prior = (
+        conn.execute(
+            text(
+                "SELECT COALESCE(MAX(version), 0) AS max_version"
+                " FROM wb.submissions WHERE invoice_ref = :ref" + extra
+            ),
+            {"ref": invoice_ref, **extra_params},
+        )
+        .mappings()
+        .first()
+    )
+    version = int(prior["max_version"]) + 1 if prior else 1
+    submission_id = uuid4().hex
+    conn.execute(
+        text(
+            "INSERT INTO wb.submissions"
+            " (id, invoice_ref, version, content_hash, filename)"
+            " VALUES (:id, :ref, :version, :hash, :filename)"
+        ),
+        {
+            "id": submission_id,
+            "ref": invoice_ref,
+            "version": version,
+            "hash": content_hash,
+            "filename": filename,
+        },
+    )
+    conn.execute(
+        text(
+            "INSERT INTO wb.submission_rows"
+            " (submission_id, invoice_id, supplier_id, invoice_date,"
+            " currency, amount_minor)"
+            " VALUES (:sid, :iid, :sup, :dt, :cur, :amt)"
+        ),
+        {
+            "sid": submission_id,
+            "iid": row.invoice_id,
+            "sup": row.supplier_id,
+            "dt": row.invoice_date,
+            "cur": row.currency,
+            "amt": row.amount_minor,
+        },
+    )
+    _replace_staging(
+        conn,
+        invoice_ref=invoice_ref,
+        submission_id=submission_id,
+        version=version,
+        row=row,
+        snapshot=snapshot,
+    )
+    return _submission_payload(submission_id, invoice_ref, version, False, True)
 
 
 def _lock_staging(conn: Connection) -> None:
@@ -566,7 +581,11 @@ def get_case_detail(
             raise CaseNotFoundError(f"case {case_id} evidence missing")
         history_sql = (
             "SELECT m.version, m.id, r.invoice_id, r.supplier_id,"
-            " r.invoice_date, r.currency, r.amount_minor"
+            " r.invoice_date, r.currency, r.amount_minor,"
+            " (SELECT p.fields #>> '{amount_minor,state}'"
+            " FROM wb.pdf_intakes i JOIN wb.pdf_revisions p"
+            " ON p.draft_id = i.draft_id AND p.revision = i.revision"
+            " WHERE i.submission_id = m.id LIMIT 1) AS amount_state"
             " FROM wb.submissions m"
             " JOIN wb.submission_rows r ON r.submission_id = m.id"
             " WHERE m.invoice_ref = :ref"
@@ -583,6 +602,7 @@ def get_case_detail(
             .mappings()
             .all()
         )
+        amount_states = {str(h["id"]): h["amount_state"] for h in history_rows}
         current = _current_staged(
             conn, str(case["invoice_ref"]), attempt=case_attempt, bound=True
         )
@@ -621,6 +641,7 @@ def get_case_detail(
         "report_id": str(verdict["report_id"]),
         "verdict": str(verdict["status"]),
         "row": _row_dict(stored),
+        "amount_state": amount_states[str(verdict["submission_id"])],
         "core": {
             "n_failed": verdict["n_failed"],
             "n_total": verdict["n_total"],
@@ -644,6 +665,7 @@ def get_case_detail(
                     "version": int(h["version"]),
                     "submission_id": str(h["id"]),
                     "row": _row_dict(h),
+                    "amount_state": h["amount_state"],
                 }
                 for h in history_rows
             ],

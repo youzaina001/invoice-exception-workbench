@@ -2,8 +2,8 @@
 
 from fastapi.testclient import TestClient
 
-from ledgerlens.app import create_app
-from ledgerlens.settings import Settings
+from invoice_triage.app import create_app
+from invoice_triage.settings import Settings
 
 
 def test_forged_reviewer_header_is_not_a_session(pg_dsns: dict[str, str]) -> None:

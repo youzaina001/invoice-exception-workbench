@@ -1,6 +1,6 @@
 # Invoice Exception Review
 
-LedgerLens lets an operator investigate incomplete supplier invoices and resolve exception cases using current check evidence. The default runtime is the localhost workflow in `README.md`. Hosted mode gives an invited Reviewer synthetic examples inside a private Demo Workspace. No hosted deployment is claimed. See `docs/adr/0001-select-hosted-services.md`.
+Invoice Triage lets an operator investigate incomplete supplier invoices and resolve exception cases using current check evidence. The default runtime is the localhost workflow in `README.md`. Hosted mode gives an invited Reviewer synthetic examples inside a private Demo Workspace. No hosted deployment is claimed. See `docs/adr/0001-select-hosted-services.md`.
 
 ## Language
 

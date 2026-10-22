@@ -13,7 +13,7 @@ from airflow_dq_agent.contracts.tables import (
 from airflow_dq_agent.quality.registry import CHECK_SPECS
 from fastapi.testclient import TestClient
 
-import ledgerlens.core_integration as registration
+import invoice_triage.core_integration as registration
 
 
 def test_concurrent_first_runs_register_once(

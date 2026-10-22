@@ -19,7 +19,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--installed-package",
         action="store_true",
-        help="Test an installed LedgerLens package instead of this checkout",
+        help="Test an installed Invoice Triage package instead of this checkout",
     )
     parser.addoption(
         "--core-checkout",
@@ -28,8 +28,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    expected = Path(__file__).resolve().parents[1] / "src/ledgerlens/__init__.py"
-    spec = importlib.util.find_spec("ledgerlens")
+    expected = Path(__file__).resolve().parents[1] / "src/invoice_triage/__init__.py"
+    spec = importlib.util.find_spec("invoice_triage")
     origin = Path(spec.origin).resolve() if spec and spec.origin else None
     if origin is None or (
         not config.getoption("--installed-package") and origin != expected
@@ -56,7 +56,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
-    product = importlib.util.find_spec("ledgerlens")
+    product = importlib.util.find_spec("invoice_triage")
     core = importlib.util.find_spec("airflow_dq_agent")
     revision = "unavailable"
     if core and core.origin and shutil.which("git"):
@@ -89,7 +89,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         )
         reporter.write_line(
             f"Verification ({mode}): python={sys.executable}; "
-            f"ledgerlens={product.origin if product else None}; "
+            f"invoice_triage={product.origin if product else None}; "
             f"airflow_dq_agent={core.origin if core else None}; "
             f"core_revision={revision}"
         )
@@ -102,9 +102,9 @@ def pg_dsns(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str]
         provision_restricted_logins,
     )
 
-    from ledgerlens.core_integration import ensure_registered
-    from ledgerlens.db import setup_database
-    from ledgerlens.local_pg import LocalPostgres, find_free_port
+    from invoice_triage.core_integration import ensure_registered
+    from invoice_triage.db import setup_database
+    from invoice_triage.local_pg import LocalPostgres, find_free_port
 
     tmp = tmp_path_factory.mktemp("pg")
     pg = LocalPostgres(pgdata=tmp / "data", port=find_free_port())
@@ -143,7 +143,9 @@ def reset_db(pg_dsns: dict[str, str]) -> Iterator[None]:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE wb.case_verdicts, wb.cases, wb.submission_rows, "
+                "TRUNCATE wb.pdf_intakes, wb.pdf_confirmations, wb.pdf_revisions, "
+                "wb.pdf_drafts, wb.pdf_sources, "
+                "wb.case_verdicts, wb.cases, wb.submission_rows, "
                 "wb.submissions, wb.staging_invoice, wb.demo_attempts, "
                 "wb.demo_workspaces, dq.check_runs, dq.traces"
             )
@@ -153,8 +155,8 @@ def reset_db(pg_dsns: dict[str, str]) -> Iterator[None]:
 
 @pytest.fixture()
 def client(pg_dsns: dict[str, str]) -> TestClient:
-    from ledgerlens.app import create_app
-    from ledgerlens.settings import Settings
+    from invoice_triage.app import create_app
+    from invoice_triage.settings import Settings
 
     settings = Settings(
         intake_dsn=pg_dsns["intake"],

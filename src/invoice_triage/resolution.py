@@ -61,12 +61,13 @@ REFUSAL_GUIDANCE = {
         "The staged row changed since the check run; run checks again first."
     ),
     "verdict-not-pass": (
-        "The latest verdict did not pass; ingest a corrected CSV first."
+        "The latest verdict did not pass; ingest a corrected CSV "
+        "or upload and confirm a corrected PDF, then run fresh checks."
     ),
     "no-verdict": "No check run is recorded for this case; run checks first.",
     "current-missing": (
-        "This invoice is no longer staged; re-upload its latest CSV,"
-        " run checks, then resolve."
+        "This invoice is no longer staged; re-upload its latest CSV "
+        "or confirm and submit its latest PDF, run checks, then resolve."
     ),
 }
 

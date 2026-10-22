@@ -9,8 +9,8 @@ import pytest
 from conftest import signed_in_reviewer
 from fastapi.testclient import TestClient
 
-from ledgerlens.app import create_app
-from ledgerlens.settings import Settings
+from invoice_triage.app import create_app
+from invoice_triage.settings import Settings
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 

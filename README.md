@@ -1,4 +1,10 @@
-# LedgerLens (invoice-exception-workbench)
+# Invoice Triage
+
+Open the prepared [static PDF walkthrough](site/index.html) and
+[raw-versus-confirmed development report](site/report.html) locally. The pages
+include synthetic PDF/text/CSV downloads and offline replay instructions, with
+no sign-in or backend calls. Publication, live comparison and hosted acceptance
+remain separate, incomplete states; the invoice source repository is private.
 
 Operator workbench for investigating incomplete supplier invoices against the
 airflow-dq-agent governance core. Milestone 1 covers one complete operator
@@ -6,7 +12,24 @@ journey with deterministic fixtures: ingest a supplier CSV, run the real core
 checks against PostgreSQL, inspect the exception case, ingest a corrected
 version, and resolve through an explicit gated action.
 
-Display name: LedgerLens. Repository name: invoice-exception-workbench.
+Display name: Invoice Triage. Python distribution: `invoice-triage`.
+Import package: `invoice_triage`. Repository: `invoice-exception-workbench`.
+
+### Updating an existing installation
+
+Reinstall from this checkout to replace the former distribution:
+
+```bash
+uv pip uninstall --python .venv/bin/python invoice-exception-workbench
+uv pip install --python .venv/bin/python -e '.[dev]'
+```
+
+Update imports from `ledgerlens` to `invoice_triage` and launch commands to
+`invoice_triage.app:app`. The old import name is not provided. Database schemas,
+existing data, runtime settings and shared database lock identifiers keep their
+existing values; renaming alone needs no database migration. The PDF review
+feature adds local tables through the existing setup path. Historical verification
+records retain the name and paths used when they were captured.
 
 ## Architecture
 
@@ -88,7 +111,7 @@ Document AI/OCR, live Airflow HITL, quarantine execution, reconciliation, and
 downstream publication are later milestones and are not scaffolded.
 
 PostgreSQL here is real PostgreSQL 16 over TCP, managed from `pgserver`'s
-bundled binaries (`src/ledgerlens/local_pg.py`) because neither Docker nor
+bundled binaries (`src/invoice_triage/local_pg.py`) because neither Docker nor
 system Postgres exists in this environment. Upgrade path: run the core
 `warehouse` service (`docker compose up -d warehouse`) and point the DSNs at
 it.
@@ -144,6 +167,76 @@ without adding history. Uploading an older duplicate leaves staging unchanged.
 The browser explains both outcomes, reports refused actions, and offers Resolve
 only when the current evidence permits it.
 
+## Local PDF review
+
+Use the setup above with the supported core revision. Restart the local `make db`
+process to apply the additive PDF tables, then restart `make run`. Do not reuse
+an application process with old generated role settings.
+
+1. Open `http://127.0.0.1:8101` and choose **PDF file** under **Review supplier PDF**.
+   Use [the synthetic valid PDF](fixtures/pdf_intake/valid.pdf) or
+   [the zero-amount PDF](fixtures/pdf_intake/zero.pdf).
+2. Select **Review PDF**. Inspect the original page text, download the original
+   file if needed, and compare each extracted field with its original page evidence.
+3. Edit any reviewed fields and select **Save reviewed fields**. The original
+   source and raw extraction stay unchanged. Amounts use decimal units, such as
+   `12.34`; money is stored and checked exactly as integer cents.
+4. Select **Confirm reviewed PDF**, then **Submit confirmed PDF**. Editing fields
+   or replacing the source invalidates the earlier confirmation. Intake rechecks
+   the source, revision, complete fields and local ownership in its transaction.
+   Unsaved changes are refused by Confirm and Submit, including with JavaScript
+   disabled. Select **Save reviewed fields**, review, and confirm again.
+5. Select **Run checks on current submission**. Both supplied PDFs pass the
+   installed core's completeness check without opening a case. A real zero stays
+   zero. Confirmation and a passing check do not approve payment.
+
+PDFs, original extraction and reviewed revisions are retained in local `wb.pdf_*`
+tables. Submissions and staging contain normalized invoice fields; PDF bytes and
+page text do not enter core Audit Lineage, XCom or private normalized case samples.
+Repeated source/value submissions reuse existing duplicate/restage behavior.
+A different replacement PDF retains its own source and submission history.
+
+Invoice ID, supplier ID, date and currency must be definite before confirmation.
+Missing or ambiguous amounts can be confirmed and submitted as SQL NULL; their
+distinct states remain in the immutable reviewed revision and case history.
+An absent state carrying a number is refused. A real zero stays zero.
+Corrupt, encrypted, oversized, scanned and unsupported multi-invoice documents
+are refused, with bounded source/error evidence retained where input limits allow.
+
+Extraction uses anchored invoice/supplier ID, ISO calendar date, currency and
+final-total labels. Subtotals are not invoice totals. Distinct final totals stay
+ambiguous, as do identifiers with explicit `OR` alternatives. Money supports
+unsigned decimal-dot notation with at most two fractional
+digits, without rounding or grouping separators. EUR/USD and the euro symbol are
+supported; a bare dollar symbol remains ambiguous. No model or OCR is called.
+Unfamiliar layouts can produce missing fields; arbitrary-layout detection is
+not established. All PDF routes refuse hosted requests before workspace writes;
+this feature does not enable hosted PDF retention.
+
+### PDF correction and resolution
+
+1. Upload [the missing-amount PDF](fixtures/pdf_intake/missing_amount.pdf) or
+   [the ambiguous-amount PDF](fixtures/pdf_intake/ambiguous_amount.pdf). Inspect
+   the source and amount state, then confirm and submit without guessing a value.
+   Confirmation and submission alone do not open a case.
+2. Run checks on the current submission. The installed core reports the missing
+   amount and opens a case. Resolve stays unavailable while checks fail.
+3. Return to submissions and upload [the corrected PDF](fixtures/pdf_intake/valid.pdf),
+   or use **Replace PDF source** on the original draft. All three fixtures share
+   invoice reference `PDF-VALID-001`; the corrected source supports `12.34 EUR`.
+   Review and explicitly confirm the replacement before submitting it.
+4. The replacement becomes submission version 2. Original PDF bytes, extraction,
+   reviewed revisions and submission history remain stored. Earlier confirmation
+   cannot authorize the replacement, and the previous checks cannot resolve it.
+   Replaying the older PDF does not displace the corrected submission.
+5. Run fresh checks on the corrected submission. The case remains open after a
+   pass; select **Resolve case** to close it. Missing, stale, errored or incomplete
+   evidence, including unavailable core Audit Lineage, still refuses resolution.
+   Resolution does not approve payment or establish invoice truth.
+
+The verified development-only contract is the local intake prerequisite. Full
+ticket #2, the independent reserved corpus and held-out accuracy remain incomplete.
+
 ## Verification
 
 ```bash
@@ -157,8 +250,8 @@ After setup, run the saved synthetic extraction results without a database or
 model account:
 
 ```bash
-.venv/bin/python -m ledgerlens.evaluation replay fixtures/extraction/development/manifest.json
-.venv/bin/python -m ledgerlens.evaluation text fixtures/extraction/development/pdfs/18e73a9c.pdf
+.venv/bin/python -m invoice_triage.evaluation replay fixtures/extraction/development/manifest.json
+.venv/bin/python -m invoice_triage.evaluation text fixtures/extraction/development/pdfs/18e73a9c.pdf
 ```
 
 The bundle contains 13 development PDFs with opaque IDs, gold field states,
@@ -171,9 +264,12 @@ makes no network calls. Edited artifacts or scoring require a new analysis.
 
 This is the development portion of ticket #2. The ten independently curated
 reserved documents and exposure separation have not been established; no
-held-out score is available. Field extractors, currency-symbol interpretation,
-subtotal/total selection, live model sends and application PDF intake are not
-implemented here. PDF conversion uses the pinned bounded adapter and never
+held-out score is available. The local deterministic extractor and review flow
+above are separate from the authored stub comparison; they establish no live-model
+performance result. The finite runner below is implemented; no live comparison
+has been run. The package integration
+and Invoice-ID refusal correction create a new scorer identity while retaining
+the original PDF/gold/first-output artifacts. PDF conversion uses the pinned bounded adapter and never
 truncates. Multiple-invoice detection checks line-anchored invoice IDs throughout
 the document and repeated invoice sections within a page. Repeated same-ID
 headers across pages are treated as continuation; other document structures need
@@ -195,6 +291,101 @@ credentials and never need the demo's `.env` values.
 See [review follow-up](docs/review-follow-up.md) for finding dispositions and
 [PR handoff](docs/pr1-handoff.md) for verification and publishing status.
 
+## Finite model experiment (offline-first)
+
+For offline raw-versus-confirmed results and the saved-output format, read
+[Comparison and workflow replay](docs/COMPARISON.md). After `make setup CORE=...`,
+one command replays the frozen development examples through isolated PostgreSQL
+and the pinned core, producing JSON and Markdown without model credentials:
+
+```bash
+.venv/bin/python -m invoice_triage.workflow_replay \
+  fixtures/extraction/development/manifest.json \
+  --plan fixtures/extraction/development/workflow.json \
+  --workdir /tmp/invoice-replay-new --output /tmp/invoice-report-new.json
+```
+
+Use new work/output paths for each replay; existing state is never reset. The
+cluster stops when the command ends; its evidence directory remains. The report
+contains authored development examples, not a completed held-out live comparison.
+
+The finite runner is implemented and tested with controlled SDK transport;
+no live comparison has been run. The ordinary application and offline replay
+do not call it. `google-genai==2.32.0` is pinned in the optional `model` extra
+and included in development installs:
+
+```bash
+uv pip install --python .venv/bin/python -e '.[model]'
+.venv/bin/python -m invoice_triage.model_runner audit
+```
+
+`audit` refuses missing or damaged allowance state. It never creates a new
+allowance. Every worktree of this repository uses the same experiment directory
+under its shared Git metadata: `invoice-triage-pdf-experiment-v1`. Keep that
+directory and its adjacent identity seal; they survive task-worktree replacement.
+There is no reset or retry command. The file lock protects this experiment's
+processes, not unrelated use of the cloud account or deliberate owner tampering.
+
+Before preparation, an evaluator supplies a frozen `Plan` and sanitized
+`Eligibility` receipt. Their exact JSON schemas are available without credentials:
+
+```bash
+.venv/bin/python -c 'import json; from invoice_triage.model_runner import Plan, Eligibility; print(json.dumps({"plan": Plan.model_json_schema(), "eligibility": Eligibility.model_json_schema()}, indent=2))'
+```
+
+The plan names ten evaluation slots, three preselected scored-development slots,
+one tuning slot and one preflight slot. Scored documents must be distinct. Each
+slot binds its original PDF hash and the complete logical request hash, plus a
+verified input-token bound of at most 12,000 including the prompt and schema.
+Use the shared PDF adapter's canonical tagged text and the runner's
+`request_payload`, `canonical` and `digest` functions to calculate that request
+identity offline. Slot/scenario names and gold labels are never sent to the model.
+Normal developer commands and tests must not open reserved documents; the
+independent curator supplies their freeze/counting evidence separately.
+
+A live receipt must be `user-verified`, dated and unexpired, and name the exact
+GCP project, global Vertex AI route, proposed `gemini-3.5-flash-lite` model,
+service/SKU, eligible positive credits, credit expiry and current prices. It
+requires explicit boolean attestations for no cash spending and a provider-enforced
+output bound covering billed reasoning and client disconnects. Evidence records
+name primary provider URLs, snapshot hashes and the verified assertions; each
+slot also has counting evidence for its exact request. These are scoped user
+attestations: JSON validation and hashes cannot establish account eligibility or
+prove the provider's billing semantics. A response limit alone is insufficient.
+No positive live feasibility receipt is included. A `controlled-transport`
+receipt is exclusively for offline tests and cannot authorize the default sender.
+
+```bash
+.venv/bin/python -m invoice_triage.model_runner prepare --plan frozen-plan.json --receipt eligibility-receipt.json
+.venv/bin/python -m invoice_triage.model_runner audit
+# Only after actual eligibility/accounting verification, in the evaluator's environment:
+.venv/bin/python -m invoice_triage.model_runner send --slot preflight-0 --pdf synthetic-preflight.pdf
+.venv/bin/python -m invoice_triage.model_runner replay --slot preflight-0
+```
+
+Preparation freezes all fifteen slots and reserves their entire worst-case batch
+cost plus 25%, strictly below $4 and inside both eligible credit and the $5 ceiling.
+Infeasible preparation retains its refusal reason and authorizes zero sends.
+Dispatch holds the exclusive lock and durably reserves the slot and worst-case
+charge before constructing the SDK client. The SDK uses one total transport
+attempt, one candidate, minimal thinking, a finite 60-second transport timeout,
+structured output, and disabled function calling and automatic continuation.
+There is no semantic retry, alternate model or paid fallback. A timeout, failed
+response or process interruption consumes the slot and keeps its possible charge;
+evaluation is never resent.
+
+The first response bytes are saved before envelope/result validation. Saved
+provenance includes source/text/request/prompt/schema/code identities, requested
+and returned model where available, timestamps, usage and failure type. Unknown
+actual cost stays unavailable; the reserved worst-case charge is not a bill.
+`replay` verifies the sealed state and first-response hashes without constructing
+a provider client. An interrupted unfinished send remains reserved and refuses
+replay/resend pending evidence inspection. These local proofs establish neither
+the required live comparison nor held-out performance or billing eligibility.
+
+SDK references: [official documentation](https://googleapis.github.io/python-genai/)
+and [pinned release](https://pypi.org/project/google-genai/2.32.0/).
+
 ## Hosted invitation-only demo
 
 ### Prepare the database locally as its owner
@@ -210,7 +401,7 @@ helpers once with the owner's connection string (including its TLS options):
 from getpass import getpass
 from sqlalchemy.engine import make_url
 from airflow_dq_agent.adoption import apply_governance_schema, provision_restricted_logins
-from ledgerlens.db import setup_database
+from invoice_triage.db import setup_database
 
 owner = make_url(getpass("Neon owner connection string: ")).set(
     drivername="postgresql+psycopg"
@@ -229,7 +420,7 @@ local PostgreSQL cluster or writing runtime files. It installs the workbench
 tables, scoped policies, and audit-retention function; it does not seed invoices.
 Copy the three generated values from your local terminal into the web service's
 private environment settings. Keep the owner connection string out of the
-runtime. The core helper also provisions an apply login, which LedgerLens does
+runtime. The core helper also provisions an apply login, which Invoice Triage does
 not use. Re-running provisioning rotates passwords: replace the runtime values
 and restart the service afterward.
 
@@ -259,7 +450,7 @@ HOSTED=true
 LLM_MODE=stub
 APPLY_MODE=off
 TRACE_POSTGRES=true
-TRACES_DIR=/tmp/ledgerlens-traces
+TRACES_DIR=/tmp/invoice_triage-traces
 ```
 
 PostgreSQL holds the durable evidence; local JSONL traces are supplementary and
@@ -276,7 +467,7 @@ python -m pip install . 'git+https://github.com/youzaina001/airflow-dq-agent.git
 Use this Render start command from the installed workbench directory:
 
 ```bash
-uvicorn ledgerlens.app:app --host 0.0.0.0 --port "$PORT"
+uvicorn invoice_triage.app:app --host 0.0.0.0 --port "$PORT"
 ```
 
 Render supplies `PORT`. The local `make run` command deliberately binds to
@@ -286,7 +477,7 @@ service settings; this documentation does not create or deploy a service.
 In Clerk's dashboard, select **Access mode → Invite-only → Save**, following
 [Clerk's access-mode guide](https://clerk.com/docs/guides/secure/restricting-access).
 That mode hides public sign-up in the sign-in component. The Maintainer invites Reviewers in Clerk;
-LedgerLens has no invitation or public registration screen. The sign-in page
+Invoice Triage has no invitation or public registration screen. The sign-in page
 loads ClerkJS and disables its sign-up option. Clerk refreshes the browser's
 `__session` cookie; the server independently verifies RS256 signatures, issuer,
 expiry, not-before, subject, session and authorized-party claims on every request.

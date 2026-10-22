@@ -138,8 +138,8 @@
     ],
     "reserved_status": "not-established"
   },
-  "source_base": "cc02c126e11220775d63c95eda67cd99ea196948",
-  "scorer_sha256": "2eb071b07cbabcebcb0912f273036099c2d7d7fb9a8a815e01c7978e1ae15dcb",
+  "source_base": "c35cc65210ad8e1e963edefc3cd14170a6b23ce4",
+  "scorer_sha256": "c01a23299e2a8522851b32f514e075ffa7c48becd8e32fc4e33d14ef106816a5",
   "adapter": {
     "pypdf": "6.21.1",
     "strict": true,
