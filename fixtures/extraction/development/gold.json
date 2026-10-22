@@ -1,0 +1,405 @@
+{
+  "18e73a9c": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0001",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "EUR",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "c2a83501": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0002",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "USD",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "missing",
+        "value": null,
+        "evidence": []
+      }
+    }
+  },
+  "a6f78492": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0003",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "EUR",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 0,
+        "evidence": []
+      }
+    }
+  },
+  "3a51d9e0": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0004",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "USD",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "ambiguous",
+        "value": null,
+        "evidence": []
+      }
+    }
+  },
+  "fd4207ab": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "missing",
+        "value": null,
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "EUR",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "84b6c31d": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "ambiguous",
+        "value": null,
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "USD",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "0c9e7b63": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0007",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "missing",
+        "value": null,
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "EUR",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "b760a42e": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0008",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "missing",
+        "value": null,
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "USD",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "ed138c95": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0009",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "ambiguous",
+        "value": null,
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "5f0a72d6": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0010",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "USD",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "9d7f021b": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0011",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "ambiguous",
+        "value": null,
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "EUR",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "624ec9af": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0012",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "ambiguous",
+        "value": null,
+        "evidence": []
+      },
+      "currency": {
+        "state": "value",
+        "value": "USD",
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  },
+  "71c54e03": {
+    "version": "1",
+    "status": "ok",
+    "fields": {
+      "invoice_id": {
+        "state": "value",
+        "value": "Inv-0013",
+        "evidence": []
+      },
+      "supplier_id": {
+        "state": "value",
+        "value": "Sup-0042",
+        "evidence": []
+      },
+      "invoice_date": {
+        "state": "value",
+        "value": "2026-10-18",
+        "evidence": []
+      },
+      "currency": {
+        "state": "missing",
+        "value": null,
+        "evidence": []
+      },
+      "amount_minor": {
+        "state": "value",
+        "value": 12500,
+        "evidence": []
+      }
+    }
+  }
+}

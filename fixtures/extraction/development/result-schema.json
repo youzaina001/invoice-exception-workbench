@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "Failure": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "1",
+          "title": "Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "failure",
+          "title": "Status",
+          "type": "string"
+        },
+        "stage": {
+          "enum": [
+            "pdf",
+            "extract",
+            "validate"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "code": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "status",
+        "stage",
+        "code"
+      ],
+      "title": "Failure",
+      "type": "object"
+    },
+    "FieldResult_int_": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "value",
+            "missing",
+            "ambiguous"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "state",
+        "value",
+        "evidence"
+      ],
+      "title": "FieldResult[int]",
+      "type": "object"
+    },
+    "FieldResult_str_": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "value",
+            "missing",
+            "ambiguous"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "state",
+        "value",
+        "evidence"
+      ],
+      "title": "FieldResult[str]",
+      "type": "object"
+    },
+    "Fields": {
+      "additionalProperties": false,
+      "properties": {
+        "invoice_id": {
+          "$ref": "#/$defs/FieldResult_str_"
+        },
+        "supplier_id": {
+          "$ref": "#/$defs/FieldResult_str_"
+        },
+        "invoice_date": {
+          "$ref": "#/$defs/FieldResult_str_"
+        },
+        "currency": {
+          "$ref": "#/$defs/FieldResult_str_"
+        },
+        "amount_minor": {
+          "$ref": "#/$defs/FieldResult_int_"
+        }
+      },
+      "required": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "title": "Fields",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page",
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    },
+    "Success": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "1",
+          "title": "Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "ok",
+          "title": "Status",
+          "type": "string"
+        },
+        "fields": {
+          "$ref": "#/$defs/Fields"
+        }
+      },
+      "required": [
+        "version",
+        "status",
+        "fields"
+      ],
+      "title": "Success",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "failure": "#/$defs/Failure",
+      "ok": "#/$defs/Success"
+    },
+    "propertyName": "status"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Success"
+    },
+    {
+      "$ref": "#/$defs/Failure"
+    }
+  ]
+}
