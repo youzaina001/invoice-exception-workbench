@@ -11,7 +11,7 @@
   <nav aria-label="Main"><a href="index.html">Invoice Triage</a><a href="walkthrough.html">Local walkthrough</a><a href="report.html">Comparison report</a><a href="project-status.html">Project status</a></nav>
 <main id="main">
 <h1>Local PDF walkthrough</h1>
-<p>Use synthetic invoices only. The Operator reviews the original source and all five fields, explicitly confirms, and submits. This site's report and downloads need no account. Running the application additionally needs the source checkout and pinned Airflow core described in its README. The invoice repository is currently private and these changes are unpublished; no public source-download or working public replay is claimed.</p>
+<p>Use synthetic invoices only. The Operator reviews the original source and all five fields, explicitly confirms, and submits. This site's report and downloads need no account. Running the application additionally needs the source checkout and pinned Airflow core described in its README. The source repository is private: the commands below require repository access. The saved report and sample downloads can be inspected without that access.</p>
 <h2 id="pdf">Missing amount → checked case → corrected source</h2>
 <ol><li>From the source checkout, use <code>make setup CORE=/path/to/airflow-dq-agent</code>. Start bundled PostgreSQL with <code>make db</code> and the localhost application with <code>make run</code>, in separate terminals as the README explains.</li>
 <li>Upload <a href="samples/missing_amount.pdf">missing_amount.pdf</a> using PDF file → Review PDF. Compare the <a href="samples/missing_amount.txt">source text</a> with all five fields. The absent amount must remain missing, not guessed.</li>
