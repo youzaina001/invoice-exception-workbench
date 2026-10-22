@@ -10,11 +10,59 @@ from playwright.sync_api import expect, sync_playwright
 from test_browser_journey import live_server as live_server
 from test_browser_journey import session_key as session_key
 from test_evaluation import make_pdf
+from test_saved_extraction import saved
 
 INVOICE = (
     "Invoice ID: PDF-BROWSER\nSupplier ID: SUP-001\nInvoice date: 2026-10-23\n"
     "Currency: EUR\nInvoice total: 0.00\n"
 )
+
+
+def test_browser_imports_saved_output_with_visible_identity_and_confirmation(
+    live_server: str,
+) -> None:
+    from invoice_triage.deterministic import extract_fields
+    from invoice_triage.pdf_text import PDFText, read_pdf
+
+    source = make_pdf([INVOICE])
+    pdf = read_pdf(source)
+    assert isinstance(pdf, PDFText)
+    raw = extract_fields(pdf).model_dump(mode="json")
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(java_script_enabled=False)
+            page.goto(live_server)
+            page.get_by_label("PDF file", exact=True).set_input_files(
+                {
+                    "name": "source.pdf",
+                    "mimeType": "application/pdf",
+                    "buffer": source,
+                }
+            )
+            page.get_by_label("Saved extraction JSON (optional)").set_input_files(
+                {
+                    "name": "saved.json",
+                    "mimeType": "application/json",
+                    "buffer": saved(source, raw),
+                }
+            )
+            page.get_by_role("button", name="Review PDF", exact=True).click()
+            expect(
+                page.get_by_text("Saved extraction: synthetic-model-stub", exact=False)
+            ).to_be_visible()
+            expect(
+                page.get_by_role("button", name="Submit confirmed PDF")
+            ).to_be_hidden()
+            expect(
+                page.get_by_label("Amount (decimal, for example 12.34)", exact=True)
+            ).to_have_value("0.00")
+            page.get_by_role("button", name="Confirm reviewed PDF").click()
+            page.get_by_role("button", name="Submit confirmed PDF").click()
+            page.get_by_role("button", name="Run checks on current submission").click()
+            expect(page.get_by_text("(no case opened)", exact=False)).to_be_visible()
+        finally:
+            browser.close()
 
 
 @pytest.mark.parametrize("state", ["missing", "ambiguous"])

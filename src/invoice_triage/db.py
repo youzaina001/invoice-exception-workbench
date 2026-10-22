@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS wb.pdf_confirmations (
     FOREIGN KEY (draft_id, revision)
         REFERENCES wb.pdf_revisions(draft_id, revision)
 );
+ALTER TABLE wb.pdf_revisions ADD COLUMN IF NOT EXISTS extraction JSONB;
 CREATE TABLE IF NOT EXISTS wb.pdf_intakes (
     draft_id TEXT NOT NULL,
     revision INTEGER NOT NULL,

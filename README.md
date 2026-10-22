@@ -287,6 +287,22 @@ See [review follow-up](docs/review-follow-up.md) for finding dispositions and
 
 ## Finite model experiment (offline-first)
 
+For offline raw-versus-confirmed results and the saved-output format, read
+[Comparison and workflow replay](docs/COMPARISON.md). After `make setup CORE=...`,
+one command replays the frozen development examples through isolated PostgreSQL
+and the pinned core, producing JSON and Markdown without model credentials:
+
+```bash
+.venv/bin/python -m invoice_triage.workflow_replay \
+  fixtures/extraction/development/manifest.json \
+  --plan fixtures/extraction/development/workflow.json \
+  --workdir /tmp/invoice-replay-new --output /tmp/invoice-report-new.json
+```
+
+Use new work/output paths for each replay; existing state is never reset. The
+cluster stops when the command ends; its evidence directory remains. The report
+contains authored development examples, not a completed held-out live comparison.
+
 The finite runner is implemented and tested with controlled SDK transport;
 no live comparison has been run. The ordinary application and offline replay
 do not call it. `google-genai==2.32.0` is pinned in the optional `model` extra

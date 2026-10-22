@@ -17,6 +17,7 @@ from starlette.datastructures import UploadFile as FormUploadFile
 
 from invoice_triage import pdf_intake
 from invoice_triage.auth import verified_reviewer
+from invoice_triage.evaluation import load_json
 from invoice_triage.extraction import Fields
 from invoice_triage.request_scope import (
     activate_connection_scope,
@@ -372,14 +373,27 @@ def create_app(
         )
 
     @app.post("/pdf-drafts")
-    def upload_pdf(request: Request, file: UploadFile) -> Response:
+    def upload_pdf(
+        request: Request, file: UploadFile, extraction: UploadFile | None = None
+    ) -> Response:
         intake, _, _ = _engines(request.app)
         data = file.file.read(MAX_UPLOAD_BYTES + 1)
         if len(data) > MAX_UPLOAD_BYTES:
             return _error(request, "PDF exceeds the 5 MiB limit", 413)
         try:
+            saved = None
+            if extraction is not None:
+                saved_data = extraction.file.read(1024 * 1024 + 1)
+                if len(saved_data) > 1024 * 1024:
+                    raise ValueError("Saved extraction exceeds 1 MiB")
+                saved = load_json(saved_data)
+                if saved is None:
+                    raise ValueError("Saved extraction must be an object")
             draft = pdf_intake.create_draft(
-                intake, filename=file.filename or "upload.pdf", data=data
+                intake,
+                filename=file.filename or "upload.pdf",
+                data=data,
+                extraction=saved,
             )
         except ValueError as exc:
             return _pdf_error(request, exc)

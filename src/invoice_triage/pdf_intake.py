@@ -15,6 +15,7 @@ from invoice_triage.deterministic import extract_fields
 from invoice_triage.extraction import Fields, Success, validate_result
 from invoice_triage.pdf_text import MAX_PDF_BYTES, PDFText, read_pdf
 from invoice_triage.request_scope import current_hosted
+from invoice_triage.saved_extraction import SavedExtraction
 from invoice_triage.services import InvoiceRow, ingest_invoice_row
 
 
@@ -31,7 +32,13 @@ def _json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def _binding(draft: str, revision: int, source_hash: str, fields: Any) -> str:
+def _binding(
+    draft: str,
+    revision: int,
+    source_hash: str,
+    fields: Any,
+    extraction: Any = None,
+) -> str:
     return hashlib.sha256(
         _json(
             {
@@ -40,6 +47,7 @@ def _binding(draft: str, revision: int, source_hash: str, fields: Any) -> str:
                 "source": source_hash,
                 "fields": fields,
                 "owner": "local",
+                **({"extraction": extraction} if extraction is not None else {}),
             }
         ).encode()
     ).hexdigest()
@@ -87,7 +95,8 @@ def _read(conn: Connection, draft_id: str, *, lock: bool = False) -> dict[str, A
         conn.execute(
             text(
                 "SELECT d.id, d.revision, r.source_id, r.fields, r.binding, "
-                "s.source_hash, s.filename, s.pages, s.raw, "
+                "s.source_hash, s.filename, s.pages, r.extraction, "
+                "COALESCE(r.extraction->'result', s.raw) AS raw, "
                 "c.binding AS confirmation, i.submission_id AS submitted_id "
                 "FROM wb.pdf_drafts d JOIN wb.pdf_revisions r "
                 "ON r.draft_id = d.id AND r.revision = d.revision "
@@ -121,15 +130,27 @@ def _revision(
     conn.execute(
         text(
             "INSERT INTO wb.pdf_revisions "
-            "(draft_id, revision, source_id, fields, binding) "
-            "VALUES (:draft, :revision, :source, CAST(:fields AS JSONB), :binding)"
+            "(draft_id, revision, source_id, fields, binding, extraction) "
+            "VALUES (:draft, :revision, :source, CAST(:fields AS JSONB), :binding, "
+            "CAST(:extraction AS JSONB))"
         ),
         {
             "draft": draft_id,
             "revision": revision,
             "source": source["id"],
             "fields": _json(fields),
-            "binding": _binding(draft_id, revision, source["source_hash"], fields),
+            "binding": _binding(
+                draft_id,
+                revision,
+                source["source_hash"],
+                fields,
+                source.get("extraction"),
+            ),
+            "extraction": (
+                _json(source["extraction"])
+                if source.get("extraction") is not None
+                else None
+            ),
         },
     )
     conn.execute(
@@ -145,12 +166,23 @@ def _extracted_fields(source: dict[str, Any]) -> dict[str, Any] | None:
     )
 
 
-def create_draft(engine: Engine, *, filename: str, data: bytes) -> dict[str, Any]:
+def create_draft(
+    engine: Engine, *, filename: str, data: bytes, extraction: object = None
+) -> dict[str, Any]:
     _local_only()
     source = _source(data, filename)
+    saved = None
+    if extraction is not None:
+        if source["raw"]["status"] != "ok":
+            raise ValueError("PDF adapter or document refusal cannot be overridden")
+        saved = SavedExtraction.model_validate(extraction).checked(
+            source["source_hash"], source["pages"]
+        )
     draft_id = uuid4().hex
     with engine.begin() as conn:
         stored = _store_source(conn, source)
+        if saved is not None:
+            stored.update(extraction=saved, raw=saved["result"])
         conn.execute(
             text(
                 "INSERT INTO wb.pdf_drafts (id, owner_context, revision) "
@@ -218,7 +250,11 @@ def edit_draft(
             {"version": "1", "status": "ok", "fields": fields}, draft["pages"]
         )
         assert isinstance(reviewed, Success)
-        source = {"id": draft["source_id"], "source_hash": draft["source_hash"]}
+        source = {
+            "id": draft["source_id"],
+            "source_hash": draft["source_hash"],
+            "extraction": draft["extraction"],
+        }
         _revision(
             conn,
             draft_id,
@@ -268,6 +304,7 @@ def _verify_source(conn: Connection, draft: dict[str, Any]) -> None:
         draft["revision"],
         hashlib.sha256(data).hexdigest(),
         draft["fields"],
+        draft["extraction"],
     )
     if expected != draft["binding"]:
         raise PDFConflict(

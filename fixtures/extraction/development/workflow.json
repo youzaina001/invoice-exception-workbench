@@ -1,0 +1,48 @@
+{
+  "version": "1",
+  "manifest_sha256": "95165e057cb6d6851064b3d36d2ea1703e0e7a6034013394b08fe9ed07f2fe8a",
+  "code_sha256": "3e6c53a4aa67347aa1b6a994e688b2c65cac5b051ccb7d0b97a2487aa25ab7d9",
+  "core_revision": "a1477241fa856df64687e998347e3ecca315619a",
+  "policy": "confirm-unchanged-then-declared-source-replacement-v1",
+  "expected": {
+    "18e73a9c": "no_case",
+    "c2a83501": "resolved",
+    "a6f78492": "no_case",
+    "3a51d9e0": "resolved",
+    "fd4207ab": "refused",
+    "84b6c31d": "refused",
+    "0c9e7b63": "refused",
+    "b760a42e": "refused",
+    "ed138c95": "refused",
+    "5f0a72d6": "no_case",
+    "9d7f021b": "refused",
+    "624ec9af": "refused",
+    "71c54e03": "refused"
+  },
+  "corrections": {
+    "c2a83501": {
+      "pdf": "corrections/c2a83501.pdf",
+      "arms": {
+        "baseline-stub": "corrections/c2a83501.json",
+        "model-stub": "corrections/c2a83501.json"
+      },
+      "gold": "corrections/c2a83501.json"
+    },
+    "3a51d9e0": {
+      "pdf": "corrections/3a51d9e0.pdf",
+      "arms": {
+        "baseline-stub": "corrections/3a51d9e0.json",
+        "model-stub": "corrections/3a51d9e0.json"
+      },
+      "gold": "corrections/3a51d9e0.json"
+    }
+  },
+  "hashes": {
+    "corrections/c2a83501.pdf": "b6139c30b730fbdf632097c17a680d2844bd98da2422934fcc7e4e39e7707d51",
+    "corrections/c2a83501.json": "a8b70f0fd9ef9ec222fc1427998ffcabe19e8ff7b825491a36550b935a99d5ab",
+    "corrections/3a51d9e0.pdf": "b5331295b484515d7ea8ca81c60fd8d22d5d987f77c8681703635fb31ec59096",
+    "corrections/3a51d9e0.json": "8946351e6f5941c8eae995c02652511493d207676f7a452a28c4760de3c676da"
+  },
+  "observations": [],
+  "evidence_class": "authored-example"
+}

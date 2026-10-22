@@ -4,6 +4,9 @@
 <p><a href="/">Return to submissions and run checks</a></p>
 <h2>Review PDF: {{ draft.filename }}</h2>
 <p>Review the source and all five fields before confirming. Confirmation does not run checks or approve payment.</p>
+{% if draft.extraction %}
+<p>Saved extraction: {{ draft.extraction.arm }} ({{ draft.extraction.kind }}), run {{ draft.extraction.run_id }}. Imported metadata does not establish live provider integration or accuracy.</p>
+{% endif %}
 {% if draft.submitted_id %}<p role="status">This reviewed version was submitted. Run fresh checks from the submissions page.</p>{% endif %}
 <div class="pdf-review">
 <section aria-labelledby="source-title">
