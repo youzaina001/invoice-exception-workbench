@@ -40,13 +40,13 @@
 <tr><th>supplier_id</th><td>{{ case.row.supplier_id }}</td></tr>
 <tr><th>invoice_date</th><td>{{ case.row.invoice_date }}</td></tr>
 <tr><th>currency</th><td>{{ case.row.currency }}</td></tr>
-<tr><th>amount_minor</th><td>{{ case.row.amount_minor if case.row.amount_minor is not none else "missing" }}</td></tr>
+<tr><th>amount_minor</th><td>{{ case.row.amount_minor if case.row.amount_minor is not none else case.amount_state or "missing" }}</td></tr>
 </table>
 <h3>Submission history</h3>
 <table>
 <tr><th>Version</th><th>invoice_id</th><th>supplier_id</th><th>invoice_date</th><th>currency</th><th>amount_minor</th></tr>
 {% for s in case.history.submissions %}
-<tr><td>{{ s.version }}</td><td>{{ s.row.invoice_id }}</td><td>{{ s.row.supplier_id }}</td><td>{{ s.row.invoice_date }}</td><td>{{ s.row.currency }}</td><td>{{ s.row.amount_minor if s.row.amount_minor is not none else "missing" }}</td></tr>
+<tr><td>{{ s.version }}</td><td>{{ s.row.invoice_id }}</td><td>{{ s.row.supplier_id }}</td><td>{{ s.row.invoice_date }}</td><td>{{ s.row.currency }}</td><td>{{ s.row.amount_minor if s.row.amount_minor is not none else s.amount_state or "missing" }}</td></tr>
 {% endfor %}
 </table>
 <h3>Verdicts</h3>

@@ -79,6 +79,10 @@ def extract_fields(pdf: PDFText) -> Success | Failure:
                 value: str | int | None = raw or None
                 if name == "currency":
                     value = currency_value(raw)
+                elif name in {"invoice_id", "supplier_id"} and re.search(
+                    r"[ \t]+OR[ \t]+", raw, re.IGNORECASE
+                ):
+                    value = None
                 elif name == "amount_minor":
                     value = amount_value(raw)
                 elif name == "invoice_date":

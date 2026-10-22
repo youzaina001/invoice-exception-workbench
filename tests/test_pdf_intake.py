@@ -101,6 +101,123 @@ def test_zero_amount_is_exact_integer_and_can_be_confirmed(client: TestClient) -
     assert client.post("/runs", headers=HEADERS).json()["status"] == "pass"
 
 
+@pytest.mark.parametrize("state", ["missing", "ambiguous"])
+def test_absent_pdf_amount_opens_case_then_replacement_requires_fresh_checks(
+    client: TestClient, pg_dsns: dict[str, str], state: str
+) -> None:
+    content = (
+        INVOICE.replace("Invoice total: 12.34\n", "")
+        if state == "missing"
+        else INVOICE + "Invoice total: 99.00\n"
+    )
+    source = make_pdf([content])
+    draft = upload(client, source)
+    assert draft["fields"]["amount_minor"]["state"] == state
+    assert draft["fields"]["amount_minor"]["value"] is None
+    confirmed = action(client, draft, "confirm")
+    assert overview(client)["cases"] == []
+    original = action(client, confirmed, "intake")
+    assert overview(client)["cases"] == []
+    failed = client.post("/runs", headers=HEADERS).json()
+    assert failed["status"] == "fail"
+    case_url = f"/cases/{failed['case_id']}"
+    detail = client.get(case_url, headers=HEADERS).json()
+    assert detail["status"] == "open"
+    assert detail["row"]["amount_minor"] is None
+    assert detail["core"]["sample_failures"][0]["amount_minor"] is None
+    refused = client.post(f"{case_url}/resolve", headers=HEADERS)
+    assert refused.status_code == 200
+    assert refused.json()["resolved"] is False
+    assert refused.json()["reason"] == "verdict-not-pass"
+
+    replacement_source = make_pdf([INVOICE])
+    replacement = upload(client, replacement_source)
+    assert replacement["id"] != draft["id"]
+    action(client, replacement, "intake", status=409)
+    wrong_confirmation = client.post(
+        f"/pdf-drafts/{replacement['id']}/intake",
+        headers=HEADERS,
+        json=token(confirmed),
+    )
+    assert wrong_confirmation.status_code == 409
+    corrected = action(client, action(client, replacement, "confirm"), "intake")
+    assert corrected["invoice_ref"] == original["invoice_ref"] == "PDF-001"
+    assert corrected["version"] == 2
+    assert corrected["submission_id"] != original["submission_id"]
+    stale = client.post(f"{case_url}/resolve", headers=HEADERS)
+    assert stale.status_code == 200
+    assert stale.json()["resolved"] is False
+    assert stale.json()["reason"] == "stale-version"
+
+    # Replaying the old PDF must not replace the current corrected submission.
+    duplicate = action(
+        client, action(client, upload(client, source), "confirm"), "intake"
+    )
+    assert duplicate["duplicate"] is True
+    assert duplicate["submission_id"] == original["submission_id"]
+    passed = client.post("/runs", headers=HEADERS).json()
+    assert passed["status"] == "pass"
+    assert passed["case_id"] == failed["case_id"]
+    detail = client.get(case_url, headers=HEADERS).json()
+    assert detail["status"] == "open"
+    assert detail["resolution"] == {"allowed": True, "reason": "ok"}
+    assert detail["checked_submission_id"] == corrected["submission_id"]
+    assert [s["row"]["amount_minor"] for s in detail["history"]["submissions"]] == [
+        None,
+        1234,
+    ]
+    assert {event["run_id"] for event in detail["history"]["audit"]} == {
+        failed["run_id"],
+        passed["run_id"],
+    }
+    resolved = client.post(f"{case_url}/resolve", headers=HEADERS)
+    assert resolved.status_code == 200
+    assert resolved.json()["resolved"] is True
+    assert client.get(case_url, headers=HEADERS).json()["status"] == "resolved"
+    saved = client.get(f"/pdf-drafts/{draft['id']}", headers=HEADERS).json()
+    assert saved["fields"] == draft["fields"]
+    assert saved["raw"] == draft["raw"]
+    assert client.get(f"/pdf-drafts/{draft['id']}/source").content == source
+    assert (
+        client.get(f"/pdf-drafts/{replacement['id']}/source").content
+        == replacement_source
+    )
+    engine = make_engine(pg_dsns["admin"])
+    try:
+        with engine.connect() as conn:
+            assert (
+                conn.execute(
+                    text("SELECT resolved_run_id FROM wb.cases WHERE id = :id"),
+                    {"id": failed["case_id"]},
+                ).scalar_one()
+                == passed["run_id"]
+            )
+    finally:
+        engine.dispose()
+
+
+def test_case_preserves_ambiguous_amount_state_after_a_later_draft_edit(
+    client: TestClient,
+) -> None:
+    draft = upload(client, make_pdf([INVOICE + "Invoice total: 99.00\n"]))
+    action(client, action(client, draft, "confirm"), "intake")
+    failed = client.post("/runs", headers=HEADERS).json()
+    fields = deepcopy(draft["fields"])
+    fields["amount_minor"] = {"state": "missing", "value": None, "evidence": []}
+    client.post(
+        f"/pdf-drafts/{draft['id']}/edit",
+        headers=HEADERS,
+        json={"revision": draft["revision"], "fields": fields},
+    ).raise_for_status()
+    case_url = f"/cases/{failed['case_id']}"
+    case = client.get(case_url, headers=HEADERS).json()
+    assert case["amount_state"] == "ambiguous"
+    assert case["history"]["submissions"][0]["amount_state"] == "ambiguous"
+    page = client.get(case_url).text
+    assert "<td>ambiguous</td>" in page
+    assert "upload and confirm a corrected PDF" in page
+
+
 def test_edit_invalidates_confirmation_preserves_raw_and_creates_only_reviewed_ref(
     client: TestClient,
 ) -> None:
@@ -203,23 +320,12 @@ def test_wrong_binding_and_revision_cannot_confirm_or_intake(
     assert overview(client)["submissions"] == []
 
 
-@pytest.mark.parametrize(
-    "source,expected",
-    [
-        (b"not a PDF", "failure"),
-        (make_pdf([INVOICE.replace("Invoice total: 12.34\n", "")]), "ok"),
-        (
-            make_pdf([INVOICE + "Invoice total: 99.00\n"]),
-            "ok",
-        ),
-    ],
-    ids=["corrupt", "missing-amount", "ambiguous-amount"],
-)
 def test_refused_extraction_retains_source_but_never_stages(
-    client: TestClient, source: bytes, expected: str
+    client: TestClient,
 ) -> None:
+    source = b"not a PDF"
     draft = upload(client, source)
-    assert draft["raw"]["status"] == expected
+    assert draft["raw"]["status"] == "failure"
     assert client.get(f"/pdf-drafts/{draft['id']}/source").content == source
     action(client, draft, "confirm", status=400)
     action(client, draft, "intake", status=409)
@@ -328,10 +434,17 @@ def test_hosted_pdf_routes_refuse_before_workspace_or_pdf_write(
 
 
 @pytest.mark.parametrize("target", ["data", "fields"])
+@pytest.mark.parametrize("path", ["new", "duplicate", "restage"])
 def test_changed_stored_source_or_fields_cannot_reuse_confirmation(
-    client: TestClient, pg_dsns: dict[str, str], target: str
+    client: TestClient, pg_dsns: dict[str, str], target: str, path: str
 ) -> None:
     draft = action(client, upload(client), "confirm")
+    if path != "new":
+        action(client, draft, "intake")
+    if path == "restage":
+        other = upload(client, make_pdf([INVOICE.replace("PDF-001", "PDF-OTHER")]))
+        action(client, action(client, other, "confirm"), "intake")
+    before = overview(client)
     engine = make_engine(pg_dsns["intake"])
     try:
         with engine.begin() as conn:
@@ -353,7 +466,7 @@ def test_changed_stored_source_or_fields_cannot_reuse_confirmation(
                     {"id": draft["id"], "revision": draft["revision"]},
                 )
         action(client, draft, "intake", status=409)
-        assert overview(client)["submissions"] == []
+        assert overview(client) == before
     finally:
         engine.dispose()
 

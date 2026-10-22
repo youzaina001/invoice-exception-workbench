@@ -247,9 +247,12 @@ def _validated(draft: dict[str, Any]) -> Fields:
         {"version": "1", "status": "ok", "fields": draft["fields"]}, draft["pages"]
     )
     assert isinstance(result, Success)
-    # Missing-amount intake follows in the next PDF slice.
-    if any(field.state != "value" for field in result.fields.items().values()):
-        raise ValueError("All five fields must be definite before PDF intake")
+    if any(
+        field.state != "value"
+        for name, field in result.fields.items().items()
+        if name != "amount_minor"
+    ):
+        raise ValueError("Invoice ID, supplier ID, date and currency must be definite")
     return result.fields
 
 

@@ -581,7 +581,11 @@ def get_case_detail(
             raise CaseNotFoundError(f"case {case_id} evidence missing")
         history_sql = (
             "SELECT m.version, m.id, r.invoice_id, r.supplier_id,"
-            " r.invoice_date, r.currency, r.amount_minor"
+            " r.invoice_date, r.currency, r.amount_minor,"
+            " (SELECT p.fields #>> '{amount_minor,state}'"
+            " FROM wb.pdf_intakes i JOIN wb.pdf_revisions p"
+            " ON p.draft_id = i.draft_id AND p.revision = i.revision"
+            " WHERE i.submission_id = m.id LIMIT 1) AS amount_state"
             " FROM wb.submissions m"
             " JOIN wb.submission_rows r ON r.submission_id = m.id"
             " WHERE m.invoice_ref = :ref"
@@ -598,6 +602,7 @@ def get_case_detail(
             .mappings()
             .all()
         )
+        amount_states = {str(h["id"]): h["amount_state"] for h in history_rows}
         current = _current_staged(
             conn, str(case["invoice_ref"]), attempt=case_attempt, bound=True
         )
@@ -636,6 +641,7 @@ def get_case_detail(
         "report_id": str(verdict["report_id"]),
         "verdict": str(verdict["status"]),
         "row": _row_dict(stored),
+        "amount_state": amount_states[str(verdict["submission_id"])],
         "core": {
             "n_failed": verdict["n_failed"],
             "n_total": verdict["n_total"],
@@ -659,6 +665,7 @@ def get_case_detail(
                     "version": int(h["version"]),
                     "submission_id": str(h["id"]),
                     "row": _row_dict(h),
+                    "amount_state": h["amount_state"],
                 }
                 for h in history_rows
             ],

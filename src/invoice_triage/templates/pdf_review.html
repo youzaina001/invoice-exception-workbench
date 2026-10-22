@@ -16,7 +16,7 @@
 </section>
 <section aria-labelledby="fields-title">
 <h3 id="fields-title">Reviewed fields</h3>
-<p>Revision {{ draft.revision }}. An edit or replacement source requires a new confirmation. Only definite fields can be submitted in this demonstration.</p>
+<p>Revision {{ draft.revision }}. An edit or replacement source requires a new confirmation. Invoice ID, supplier ID, date and currency must be definite. Missing or ambiguous amounts can be submitted without a guessed value; run checks to open a case, then upload a corrected PDF and confirm it before running fresh checks and resolving the case.</p>
 {% if rows %}
 <form action="/pdf-drafts/{{ draft.id }}/edit" method="post">
 <input type="hidden" name="revision" value="{{ draft.revision }}">
