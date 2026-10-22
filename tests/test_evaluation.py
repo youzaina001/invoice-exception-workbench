@@ -34,7 +34,7 @@ def reset_db() -> None:
 
 def command(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "ledgerlens.evaluation", *args],
+        [sys.executable, "-m", "invoice_triage.evaluation", *args],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -290,6 +290,17 @@ def test_pdf_refuses_repeated_invoice_sections_on_one_page(
     assert json.loads(result.stdout)["code"] == "multiple_invoices"
 
 
+@pytest.mark.parametrize("label", ["Invoice-ID", "Invoice #", "Invoice No."])
+def test_pdf_refuses_multiple_invoices_with_supported_id_spellings(
+    tmp_path: Path, label: str
+) -> None:
+    pdf = tmp_path / "opaque.pdf"
+    pdf.write_bytes(make_pdf([f"{label}: A-001\n{label}: B-002\n"]))
+    result = command("text", str(pdf))
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["code"] == "multiple_invoices"
+
+
 def test_pdf_keeps_repeated_headers_on_a_multipage_invoice(tmp_path: Path) -> None:
     pdf = tmp_path / "opaque.pdf"
     pages = [
@@ -458,10 +469,10 @@ def test_text_command_classifies_a_nonzero_pdf_worker_exit(
 import sys
 from subprocess import CompletedProcess
 from unittest.mock import patch
-from ledgerlens.evaluation import main
+from invoice_triage.evaluation import main
 worker = CompletedProcess([], int(sys.argv[2]), sys.argv[3].encode())
-sys.argv = ['ledgerlens.evaluation', 'text', sys.argv[1]]
-with patch('ledgerlens.pdf_text.subprocess.run', return_value=worker):
+sys.argv = ['invoice_triage.evaluation', 'text', sys.argv[1]]
+with patch('invoice_triage.pdf_text.subprocess.run', return_value=worker):
     raise SystemExit(main())
 """
     result = subprocess.run(

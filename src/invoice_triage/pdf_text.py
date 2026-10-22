@@ -11,7 +11,7 @@ import subprocess
 import sys
 from typing import Any, Literal
 
-from ledgerlens.extraction import Failure, StrictModel
+from invoice_triage.extraction import Failure, StrictModel
 
 MAX_PDF_BYTES = 5 * 1024 * 1024
 MAX_PAGES = 8
@@ -56,7 +56,7 @@ def read_pdf(data: bytes) -> PDFText | Failure:
         return refused("input_limit")
     try:
         child = subprocess.run(
-            [sys.executable, "-m", "ledgerlens.pdf_text"],
+            [sys.executable, "-m", "invoice_triage.pdf_text"],
             input=data,
             capture_output=True,
             timeout=WALL_SECONDS,
@@ -152,8 +152,8 @@ def worker() -> PDFText | Failure:
         if len(tagged.encode("utf-8")) > MAX_TEXT_BYTES:
             return refused("text_limit")
         invoice_id = re.compile(
-            r"(?im)^[ \t]*invoice[ \t]+(?:id|number|no\.?|#)"
-            r"[ \t]*:[ \t]*([^\n]+)"
+            r"(?im)^[ \t]*invoice(?:[ \t-]+(?:id|number|no\.?)[ \t]*:"
+            r"[ \t]*|[ \t]+#[ \t]*:?[ \t]*)([^\n]+)"
         )
         invoice_ids = {value.strip() for value in invoice_id.findall(tagged)}
         if len(invoice_ids) > 1:

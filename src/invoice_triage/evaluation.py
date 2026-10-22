@@ -10,8 +10,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from ledgerlens.extraction import RESULT, Failure, StrictModel, Success, validate_result
-from ledgerlens.pdf_text import ADAPTER, MAX_PDF_BYTES, PDFText, read_pdf
+from invoice_triage.extraction import (
+    RESULT,
+    Failure,
+    StrictModel,
+    Success,
+    validate_result,
+)
+from invoice_triage.pdf_text import ADAPTER, MAX_PDF_BYTES, PDFText, read_pdf
 
 
 class Document(StrictModel):

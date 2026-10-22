@@ -1,4 +1,4 @@
-# LedgerLens (invoice-exception-workbench)
+# Invoice Triage
 
 Operator workbench for investigating incomplete supplier invoices against the
 airflow-dq-agent governance core. Milestone 1 covers one complete operator
@@ -6,7 +6,23 @@ journey with deterministic fixtures: ingest a supplier CSV, run the real core
 checks against PostgreSQL, inspect the exception case, ingest a corrected
 version, and resolve through an explicit gated action.
 
-Display name: LedgerLens. Repository name: invoice-exception-workbench.
+Display name: Invoice Triage. Python distribution: `invoice-triage`.
+Import package: `invoice_triage`. Repository: `invoice-exception-workbench`.
+
+### Updating an existing installation
+
+Reinstall from this checkout to replace the former distribution:
+
+```bash
+uv pip uninstall --python .venv/bin/python invoice-exception-workbench
+uv pip install --python .venv/bin/python -e '.[dev]'
+```
+
+Update imports from `ledgerlens` to `invoice_triage` and launch commands to
+`invoice_triage.app:app`. The old import name is not provided. Database schemas,
+existing data, runtime settings and shared database lock identifiers keep their
+existing values; no database migration is needed. Historical verification
+records retain the name and paths used when they were captured.
 
 ## Architecture
 
@@ -88,7 +104,7 @@ Document AI/OCR, live Airflow HITL, quarantine execution, reconciliation, and
 downstream publication are later milestones and are not scaffolded.
 
 PostgreSQL here is real PostgreSQL 16 over TCP, managed from `pgserver`'s
-bundled binaries (`src/ledgerlens/local_pg.py`) because neither Docker nor
+bundled binaries (`src/invoice_triage/local_pg.py`) because neither Docker nor
 system Postgres exists in this environment. Upgrade path: run the core
 `warehouse` service (`docker compose up -d warehouse`) and point the DSNs at
 it.
@@ -157,8 +173,8 @@ After setup, run the saved synthetic extraction results without a database or
 model account:
 
 ```bash
-.venv/bin/python -m ledgerlens.evaluation replay fixtures/extraction/development/manifest.json
-.venv/bin/python -m ledgerlens.evaluation text fixtures/extraction/development/pdfs/18e73a9c.pdf
+.venv/bin/python -m invoice_triage.evaluation replay fixtures/extraction/development/manifest.json
+.venv/bin/python -m invoice_triage.evaluation text fixtures/extraction/development/pdfs/18e73a9c.pdf
 ```
 
 The bundle contains 13 development PDFs with opaque IDs, gold field states,
@@ -210,7 +226,7 @@ helpers once with the owner's connection string (including its TLS options):
 from getpass import getpass
 from sqlalchemy.engine import make_url
 from airflow_dq_agent.adoption import apply_governance_schema, provision_restricted_logins
-from ledgerlens.db import setup_database
+from invoice_triage.db import setup_database
 
 owner = make_url(getpass("Neon owner connection string: ")).set(
     drivername="postgresql+psycopg"
@@ -229,7 +245,7 @@ local PostgreSQL cluster or writing runtime files. It installs the workbench
 tables, scoped policies, and audit-retention function; it does not seed invoices.
 Copy the three generated values from your local terminal into the web service's
 private environment settings. Keep the owner connection string out of the
-runtime. The core helper also provisions an apply login, which LedgerLens does
+runtime. The core helper also provisions an apply login, which Invoice Triage does
 not use. Re-running provisioning rotates passwords: replace the runtime values
 and restart the service afterward.
 
@@ -259,7 +275,7 @@ HOSTED=true
 LLM_MODE=stub
 APPLY_MODE=off
 TRACE_POSTGRES=true
-TRACES_DIR=/tmp/ledgerlens-traces
+TRACES_DIR=/tmp/invoice_triage-traces
 ```
 
 PostgreSQL holds the durable evidence; local JSONL traces are supplementary and
@@ -276,7 +292,7 @@ python -m pip install . 'git+https://github.com/youzaina001/airflow-dq-agent.git
 Use this Render start command from the installed workbench directory:
 
 ```bash
-uvicorn ledgerlens.app:app --host 0.0.0.0 --port "$PORT"
+uvicorn invoice_triage.app:app --host 0.0.0.0 --port "$PORT"
 ```
 
 Render supplies `PORT`. The local `make run` command deliberately binds to
@@ -286,7 +302,7 @@ service settings; this documentation does not create or deploy a service.
 In Clerk's dashboard, select **Access mode → Invite-only → Save**, following
 [Clerk's access-mode guide](https://clerk.com/docs/guides/secure/restricting-access).
 That mode hides public sign-up in the sign-in component. The Maintainer invites Reviewers in Clerk;
-LedgerLens has no invitation or public registration screen. The sign-in page
+Invoice Triage has no invitation or public registration screen. The sign-in page
 loads ClerkJS and disables its sign-up option. Clerk refreshes the browser's
 `__session` cookie; the server independently verifies RS256 signatures, issuer,
 expiry, not-before, subject, session and authorized-party claims on every request.

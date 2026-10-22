@@ -11,8 +11,8 @@ from airflow_dq_agent.adoption import (
     provision_restricted_logins,
 )
 
-from ledgerlens.db import setup_database
-from ledgerlens.local_pg import LocalPostgres
+from invoice_triage.db import setup_database
+from invoice_triage.local_pg import LocalPostgres
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -44,7 +44,9 @@ def main() -> None:
             f"# Setup-only admin DSN. Never used at runtime.\nADMIN_DSN={admin_wh}\n",
             encoding="utf-8",
         )
-        print(f"LedgerLens Postgres on 127.0.0.1:{args.port} (pgdata {args.pgdata})")
+        print(
+            f"Invoice Triage Postgres on 127.0.0.1:{args.port} (pgdata {args.pgdata})"
+        )
         print("Runtime DSNs written to .env; admin DSN to .env.setup (setup-only).")
         print("Press Ctrl-C to stop.")
         signal.pause()

@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import event, text
 
-from ledgerlens.app import create_app
-from ledgerlens.settings import Settings
+from invoice_triage.app import create_app
+from invoice_triage.settings import Settings
 
 
 @contextmanager
