@@ -1,5 +1,11 @@
 # Invoice Triage
 
+Open the prepared [static PDF walkthrough](site/index.html) and
+[raw-versus-confirmed development report](site/report.html) locally. The pages
+include synthetic PDF/text/CSV downloads and offline replay instructions, with
+no sign-in or backend calls. Publication, live comparison and hosted acceptance
+remain separate, incomplete states; the invoice source repository is private.
+
 Operator workbench for investigating incomplete supplier invoices against the
 airflow-dq-agent governance core. Milestone 1 covers one complete operator
 journey with deterministic fixtures: ingest a supplier CSV, run the real core

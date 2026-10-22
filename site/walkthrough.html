@@ -3,57 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Invoice Triage walkthrough</title>
-  <style>
-    :root { color-scheme: light; }
-    body { font-family: Georgia, "Iowan Old Style", serif; line-height: 1.5; max-width: 42rem; margin: 2rem auto; padding: 0 1.25rem; color: #1c1917; background: #fafaf9; }
-    nav { font-family: system-ui, sans-serif; font-size: 0.95rem; margin-bottom: 1.5rem; }
-    nav a { margin-right: 1rem; }
-    h1, h2 { line-height: 1.25; }
-    h1 { font-size: 1.75rem; }
-    a { color: #1d4ed8; }
-    pre { font-family: ui-monospace, monospace; font-size: 0.9rem; background: #f5f5f4; padding: 0.75rem 1rem; overflow-x: auto; }
-    ol li { margin-bottom: 0.5rem; }
-  </style>
+  <title>Invoice Triage — local PDF walkthrough</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <nav>
-    <a href="index.html">Landing</a>
-    <a href="walkthrough.html">Walkthrough</a>
-    <a href="samples/missing_amount.csv">missing_amount.csv</a>
-    <a href="samples/corrected_amount.csv">corrected_amount.csv</a>
-  </nav>
-  <h1>Walkthrough</h1>
-  <p>This page is the invoice walkthrough for the hosted demonstration. A Reviewer is an invited person who acts as the Operator inside their own Demo Workspace. The Operator investigates an incomplete supplier invoice and resolves its exception case. The Maintainer owns the demonstration and may inspect every Demo Workspace. Hosting limits, the €0 budget, and publication status are on the <a href="index.html">landing page</a>.</p>
-
-  <h2>Sample CSVs</h2>
-  <p>The Reviewer uploads these two files in the hosted demonstration. Download them here:</p>
-  <ul>
-    <li><a href="samples/missing_amount.csv">missing_amount.csv</a> — the amount is empty, so the check opens a case.</li>
-    <li><a href="samples/corrected_amount.csv">corrected_amount.csv</a> — the same invoice with the amount filled in.</li>
-  </ul>
-  <pre>invoice_id,supplier_id,invoice_date,currency,amount
+  <a class="skip" href="#main">Skip to content</a>
+  <nav aria-label="Main"><a href="index.html">Invoice Triage</a><a href="walkthrough.html">Local walkthrough</a><a href="report.html">Comparison report</a><a href="project-status.html">Project status</a></nav>
+<main id="main">
+<h1>Local PDF walkthrough</h1>
+<p>Use synthetic invoices only. The Operator reviews the original source and all five fields, explicitly confirms, and submits. This site's report and downloads need no account. Running the application additionally needs the source checkout and pinned Airflow core described in its README. The invoice repository is currently private and these changes are unpublished; no public source-download or working public replay is claimed.</p>
+<h2 id="pdf">Missing amount → checked case → corrected source</h2>
+<ol><li>From the source checkout, use <code>make setup CORE=/path/to/airflow-dq-agent</code>. Start bundled PostgreSQL with <code>make db</code> and the localhost application with <code>make run</code>, in separate terminals as the README explains.</li>
+<li>Upload <a href="samples/missing_amount.pdf">missing_amount.pdf</a> using PDF file → Review PDF. Compare the <a href="samples/missing_amount.txt">source text</a> with all five fields. The absent amount must remain missing, not guessed.</li>
+<li>Choose Confirm reviewed PDF, then Submit confirmed PDF. Run checks on the current submission. Actual amount-completeness evidence creates an open case.</li>
+<li>Return to the PDF draft and use Replace PDF source with <a href="samples/corrected_amount.pdf">corrected_amount.pdf</a>. Review the <a href="samples/corrected_amount.txt">corrected text</a>. The replacement clears confirmation.</li>
+<li>Confirm and submit the corrected revision. Run fresh checks, then explicitly choose Resolve case. Earlier checks cannot authorize the new source, and passing checks alone does not silently resolve the case.</li></ol>
+<p>Original PDF bytes, page text, extraction identity, revisions and confirmations remain in local PostgreSQL. Edits and replacement sources need new confirmation. Missing or ambiguous invoice ID, supplier ID, date or currency refuses intake; missing or ambiguous amounts can open a real case. Scans, malformed/oversized PDFs and multiple invoices are outside this bounded text-PDF path.</p>
+<h2 id="replay">Replay the development report offline</h2>
+<p>After source setup, run this from the Invoice Triage checkout. It needs no model credentials or hosted account. Use fresh output/work paths each time; the isolated PostgreSQL cluster stops and its evidence directory remains.</p>
+<pre tabindex="0" aria-label="Offline replay command">.venv/bin/python -m invoice_triage.workflow_replay \
+  fixtures/extraction/development/manifest.json \
+  --plan fixtures/extraction/development/workflow.json \
+  --workdir /tmp/invoice-replay-new \
+  --output /tmp/invoice-report-new.json</pre>
+<p>Read <a href="report.html">the saved report</a> or download <a href="evidence/saved-report.json">the full synthetic JSON</a>. Raw extraction and actual confirmed outcomes are separate. Both arms use the same gate. Scripted correction follows a frozen policy; labels score outcomes afterward. Each arm/document has an isolated database and the installed core runs in-process. No user's workbench database is reset.</p>
+<p>These outputs are authored examples. Their original bytes remain unchanged. No independently held-out result or live billing proof is available. Actual billed cost and human review time are unavailable; replay is not fresh provider integration.</p>
+<h2 id="csv">Preserved CSV journey</h2>
+<p>Download <a href="samples/missing_amount.csv">missing_amount.csv</a> and <a href="samples/corrected_amount.csv">corrected_amount.csv</a>. Ingest the missing-amount CSV, run checks, ingest the correction for the same invoice, run checks again, then explicitly resolve the case.</p>
+<p>Original CSV bytes are not retained; uploads are parsed into rows. This differs from the local PDF evidence retained with drafts and submissions.</p>
+<pre tabindex="0" aria-label="Missing amount CSV">invoice_id,supplier_id,invoice_date,currency,amount
 INV-001,SUP-42,2026-09-01,EUR,</pre>
-  <pre>invoice_id,supplier_id,invoice_date,currency,amount
+<pre tabindex="0" aria-label="Corrected amount CSV">invoice_id,supplier_id,invoice_date,currency,amount
 INV-001,SUP-42,2026-09-01,EUR,123.45</pre>
-  <p>The original CSV is not kept. The upload is parsed into rows.</p>
-
-  <h2>Steps</h2>
-  <ol>
-    <li>The Maintainer creates the Reviewer's invitation in the Clerk dashboard. Clerk sends the email. The application does not send mail and does not offer an invite screen or public registration.</li>
-    <li>The Reviewer signs in. The first sign-in creates one Demo Workspace and one Demo Attempt. That Demo Attempt starts with no invoices.</li>
-    <li>The Reviewer ingests <a href="samples/missing_amount.csv">missing_amount.csv</a>, then runs checks on the current submission. The missing amount opens a case.</li>
-    <li>The Reviewer ingests <a href="samples/corrected_amount.csv">corrected_amount.csv</a> and runs checks again.</li>
-    <li>The Reviewer opens the case and uses Resolve case. Resolve closes the case only when the current check allows it.</li>
-  </ol>
-
-  <h2>Signing out and returning</h2>
-  <p>Signing out and returning resumes the same Demo Attempt, including its submissions, cases, check results, and audit evidence. Signing out does not reset the work.</p>
-
-  <h2>Start fresh</h2>
-  <p>Start fresh opens a new Demo Attempt that contains no invoices. The previous Demo Attempt stays readable in the same Demo Workspace, including its audit evidence. Ingest and resolve against that previous Demo Attempt are refused.</p>
-
-  <h2>Five Demo Attempts</h2>
-  <p>A Demo Workspace keeps at most five Demo Attempts. The first sign-in creates the first. Each Start fresh adds one. When the Reviewer already has five, Start fresh deletes the oldest attempt in that workspace, including its submissions, cases, check results, and audit evidence, and the workspace again holds five. That deletion does not change any other Reviewer's Demo Workspace.</p>
+<h2 id="hosted">Separate hosted CSV behavior</h2>
+<p>Hosted acceptance is unverified. In the implemented hosted CSV design, only an invited Reviewer enters. The Maintainer creates invitations in the Clerk dashboard; the provider sends invitation mail. The application has no invitation UI, public registration or application mail service.</p>
+<p>First sign-in creates a Demo Workspace and empty Demo Attempt. Signing out and returning resumes it. Start fresh creates a new empty attempt and keeps the previous attempt, including audit evidence, as read-only history. Ingest and resolve against past attempts are refused. A workspace keeps at most five attempts; a sixth removes the oldest in that workspace, without changing another Reviewer's records.</p>
+<p>Local PDF retention does not establish hosted PDF retention. Hosted PDF routes are disabled. The <a href="index.html">€0 hosting boundary and historical provider assumptions</a> remain separate from the finite extraction allowance.</p>
+</main>
 </body>
 </html>

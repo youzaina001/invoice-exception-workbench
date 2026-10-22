@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invoice Triage — saved comparison report</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <nav aria-label="Main"><a href="index.html">Invoice Triage</a><a href="walkthrough.html">Local walkthrough</a><a href="report.html">Comparison report</a><a href="project-status.html">Project status</a></nav>
+<main id="main">
+<h1>Raw extraction and confirmed outcomes</h1>
+<p>Synthetic development data: 13 authored saved examples per arm. These are scoring fixtures, not measured model performance. The ten-document independently held-out layout and live comparison are unavailable.</p>
+<p class="status">Executed local replay, 22 October 2026. No Operator observations, actual billed cost, fresh live integration or publication is established.</p>
+<div class="scroll" tabindex="0" role="region" aria-label="Raw extraction results"><table><caption>Raw-only all-five value/state agreement</caption><thead><tr><th scope="col">Arm</th><th scope="col">Exact records</th><th scope="col">Scope</th></tr></thead><tbody>
+<tr><th scope="row">baseline-stub</th><td>8/13</td><td>Authored development</td></tr>
+<tr><th scope="row">model-stub</th><td>11/13</td><td>Authored development</td></tr>
+</tbody></table></div>
+<p>Equal primary counts are a tie with no difference established on this corpus. Different counts do not establish a general model winner or population accuracy. S10 tests field fidelity, not a safety certification.</p>
+<details><summary>Paired outcomes, definite-field accuracy, state confusion and first failures</summary><pre tabindex="0" aria-label="Raw extraction breakdown">{
+  &quot;arms&quot;: {
+    &quot;baseline-stub&quot;: {
+      &quot;definite_fields&quot;: {
+        &quot;amount_minor&quot;: {
+          &quot;accuracy&quot;: &quot;9/11&quot;,
+          &quot;correct&quot;: 9,
+          &quot;total&quot;: 11
+        },
+        &quot;currency&quot;: {
+          &quot;accuracy&quot;: &quot;11/11&quot;,
+          &quot;correct&quot;: 11,
+          &quot;total&quot;: 11
+        },
+        &quot;invoice_date&quot;: {
+          &quot;accuracy&quot;: &quot;11/11&quot;,
+          &quot;correct&quot;: 11,
+          &quot;total&quot;: 11
+        },
+        &quot;invoice_id&quot;: {
+          &quot;accuracy&quot;: &quot;11/11&quot;,
+          &quot;correct&quot;: 11,
+          &quot;total&quot;: 11
+        },
+        &quot;supplier_id&quot;: {
+          &quot;accuracy&quot;: &quot;11/11&quot;,
+          &quot;correct&quot;: 11,
+          &quot;total&quot;: 11
+        }
+      },
+      &quot;failures&quot;: {},
+      &quot;false_markings&quot;: {
+        &quot;amount_minor&quot;: {
+          &quot;false_missing&quot;: 1,
+          &quot;false_value&quot;: 1
+        },
+        &quot;currency&quot;: {
+          &quot;false_value&quot;: 1
+        },
+        &quot;invoice_date&quot;: {},
+        &quot;invoice_id&quot;: {
+          &quot;false_ambiguous&quot;: 1
+        },
+        &quot;supplier_id&quot;: {}
+      },
+      &quot;primary&quot;: {
+        &quot;correct&quot;: 8,
+        &quot;total&quot;: 13
+      },
+      &quot;state_confusion&quot;: {
+        &quot;amount_minor&quot;: {
+          &quot;ambiguous-&gt;value&quot;: 1,
+          &quot;missing-&gt;missing&quot;: 1,
+          &quot;value-&gt;missing&quot;: 1,
+          &quot;value-&gt;value&quot;: 10
+        },
+        &quot;currency&quot;: {
+          &quot;ambiguous-&gt;value&quot;: 1,
+          &quot;missing-&gt;missing&quot;: 1,
+          &quot;value-&gt;value&quot;: 11
+        },
+        &quot;invoice_date&quot;: {
+          &quot;ambiguous-&gt;ambiguous&quot;: 1,
+          &quot;missing-&gt;missing&quot;: 1,
+          &quot;value-&gt;value&quot;: 11
+        },
+        &quot;invoice_id&quot;: {
+          &quot;ambiguous-&gt;ambiguous&quot;: 1,
+          &quot;missing-&gt;ambiguous&quot;: 1,
+          &quot;value-&gt;value&quot;: 11
+        },
+        &quot;supplier_id&quot;: {
+          &quot;ambiguous-&gt;ambiguous&quot;: 1,
+          &quot;missing-&gt;missing&quot;: 1,
+          &quot;value-&gt;value&quot;: 11
+        }
+      }
+    },
+    &quot;model-stub&quot;: {
+      &quot;definite_fields&quot;: {
+        &quot;amount_minor&quot;: {
+          &quot;accuracy&quot;: &quot;10/11&quot;,
+          &quot;correct&quot;: 10,
+          &quot;total&quot;: 11
+        },
+        &quot;currency&quot;: {
+          &quot;accuracy&quot;: &quot;10/11&quot;,
+          &quot;correct&quot;: 10,
+          &quot;total&quot;: 11
+        },
+        &quot;invoice_date&quot;: {
+          &quot;accuracy&quot;: &quot;10/11&quot;,
+          &quot;correct&quot;: 10,
+          &quot;total&quot;: 11
+        },
+        &quot;invoice_id&quot;: {
+          &quot;accuracy&quot;: &quot;10/11&quot;,
+          &quot;correct&quot;: 10,
+          &quot;total&quot;: 11
+        },
+        &quot;supplier_id&quot;: {
+          &quot;accuracy&quot;: &quot;11/11&quot;,
+          &quot;correct&quot;: 11,
+          &quot;total&quot;: 11
+        }
+      },
+      &quot;failures&quot;: {
+        &quot;extract/saved_stub_refusal&quot;: 1
+      },
+      &quot;false_markings&quot;: {
+        &quot;amount_minor&quot;: {
+          &quot;false_ambiguous&quot;: 1
+        },
+        &quot;currency&quot;: {},
+        &quot;invoice_date&quot;: {},
+        &quot;invoice_id&quot;: {},
+        &quot;supplier_id&quot;: {}
+      },
+      &quot;primary&quot;: {
+        &quot;correct&quot;: 11,
+        &quot;total&quot;: 13
+      },
+      &quot;state_confusion&quot;: {
+        &quot;amount_minor&quot;: {
+          &quot;ambiguous-&gt;ambiguous&quot;: 1,
+          &quot;missing-&gt;ambiguous&quot;: 1,
+          &quot;value-&gt;failure&quot;: 1,
+          &quot;value-&gt;value&quot;: 10
+        },
+        &quot;currency&quot;: {
+          &quot;ambiguous-&gt;ambiguous&quot;: 1,
+          &quot;missing-&gt;missing&quot;: 1,
+          &quot;value-&gt;failure&quot;: 1,
+          &quot;value-&gt;value&quot;: 10
+        },
+        &quot;invoice_date&quot;: {
+          &quot;ambiguous-&gt;ambiguous&quot;: 1,
+          &quot;missing-&gt;missing&quot;: 1,
+          &quot;value-&gt;failure&quot;: 1,
+          &quot;value-&gt;value&quot;: 10
+        },
+        &quot;invoice_id&quot;: {
+          &quot;ambiguous-&gt;ambiguous&quot;: 1,
+          &quot;missing-&gt;missing&quot;: 1,
+          &quot;value-&gt;failure&quot;: 1,
+          &quot;value-&gt;value&quot;: 10
+        },
+        &quot;supplier_id&quot;: {
+          &quot;ambiguous-&gt;failure&quot;: 1,
+          &quot;missing-&gt;missing&quot;: 1,
+          &quot;value-&gt;value&quot;: 11
+        }
+      }
+    }
+  },
+  &quot;paired&quot;: {
+    &quot;0c9e7b63&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;18e73a9c&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;3a51d9e0&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: false,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;5f0a72d6&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: false,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;624ec9af&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;71c54e03&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;84b6c31d&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;9d7f021b&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: false,
+        &quot;failure&quot;: {
+          &quot;code&quot;: &quot;saved_stub_refusal&quot;,
+          &quot;stage&quot;: &quot;extract&quot;,
+          &quot;status&quot;: &quot;failure&quot;,
+          &quot;version&quot;: &quot;1&quot;
+        }
+      }
+    },
+    &quot;a6f78492&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: false,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;b760a42e&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;c2a83501&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: false,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;ed138c95&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: false,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    },
+    &quot;fd4207ab&quot;: {
+      &quot;baseline-stub&quot;: {
+        &quot;exact&quot;: false,
+        &quot;failure&quot;: null
+      },
+      &quot;model-stub&quot;: {
+        &quot;exact&quot;: true,
+        &quot;failure&quot;: null
+      }
+    }
+  }
+}</pre></details>
+<h2>Actual confirmed workflow</h2>
+<p>The script confirms unchanged fields when the common gate allows them. Only an actual open case receives its predeclared correction, fresh confirmation and checks, and explicit resolution. Gold is parsed for scoring afterward. No case is manufactured for a rejected input.</p>
+<div class="scroll" tabindex="0" role="region" aria-label="Confirmed workflow summary"><table><caption>Confirmed outcomes, distinct from raw extraction</caption><thead><tr><th scope="col">Arm</th><th scope="col">Assigned</th><th scope="col">Actual outcomes</th><th scope="col">Wrong no-case / all no-case</th><th scope="col">Wrong resolutions / all resolved</th><th scope="col">Correctly processed / cleared</th></tr></thead><tbody>
+<tr><th scope="row">baseline-stub</th><td>13</td><td>{&quot;no_case&quot;: 4, &quot;open&quot;: 1, &quot;refused&quot;: 7, &quot;resolved&quot;: 1}</td><td>3/4</td><td>0/1</td><td>2 / 2</td></tr>
+<tr><th scope="row">model-stub</th><td>13</td><td>{&quot;no_case&quot;: 3, &quot;refused&quot;: 8, &quot;resolved&quot;: 2}</td><td>0/3</td><td>0/2</td><td>5 / 5</td></tr>
+</tbody></table></div>
+<p>All 26 assigned arm/document outcomes remain below, including refusals. A correctly processed submission has all five final gold states/values and the expected disposition. Correctly cleared additionally means no case or an explicitly resolved case. Expected refusals remain in the denominator and are not counted as processed submissions.</p>
+<p>Passing completeness and explicit confirmation do not establish invoice truth or approve payment. Wrong no-case acceptances below actually entered the allowed confirmed journey; they are not hypothetical raw-only clearances.</p>
+<div class="scroll" tabindex="0" role="region" aria-label="Every workflow outcome"><table><caption>Every assigned document and failure</caption><thead><tr><th scope="col">Arm / document</th><th scope="col">Expected</th><th scope="col">Actual</th><th scope="col">Final fields agree</th><th scope="col">Explanation</th></tr></thead><tbody>
+<tr><th scope="row">baseline-stub / 18e73a9c</th><td>no_case</td><td>no_case</td><td>True</td><td>Expected disposition and all five fields agree.</td></tr>
+<tr><th scope="row">baseline-stub / c2a83501</th><td>resolved</td><td>resolved</td><td>True</td><td>Expected disposition and all five fields agree.</td></tr>
+<tr><th scope="row">baseline-stub / a6f78492</th><td>no_case</td><td>open</td><td>False</td><td>Field disagreements: amount_minor; actual open, expected no_case. </td></tr>
+<tr><th scope="row">baseline-stub / 3a51d9e0</th><td>resolved</td><td>no_case</td><td>False</td><td>Field disagreements: amount_minor; actual no_case, expected resolved. </td></tr>
+<tr><th scope="row">baseline-stub / fd4207ab</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">baseline-stub / 84b6c31d</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">baseline-stub / 0c9e7b63</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">baseline-stub / b760a42e</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">baseline-stub / ed138c95</th><td>refused</td><td>no_case</td><td>False</td><td>Field disagreements: currency; actual no_case, expected refused. </td></tr>
+<tr><th scope="row">baseline-stub / 5f0a72d6</th><td>no_case</td><td>no_case</td><td>False</td><td>Field disagreements: amount_minor; actual no_case, expected no_case. </td></tr>
+<tr><th scope="row">baseline-stub / 9d7f021b</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">baseline-stub / 624ec9af</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">baseline-stub / 71c54e03</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">model-stub / 18e73a9c</th><td>no_case</td><td>no_case</td><td>True</td><td>Expected disposition and all five fields agree.</td></tr>
+<tr><th scope="row">model-stub / c2a83501</th><td>resolved</td><td>resolved</td><td>True</td><td>Expected disposition and all five fields agree.</td></tr>
+<tr><th scope="row">model-stub / a6f78492</th><td>no_case</td><td>no_case</td><td>True</td><td>Expected disposition and all five fields agree.</td></tr>
+<tr><th scope="row">model-stub / 3a51d9e0</th><td>resolved</td><td>resolved</td><td>True</td><td>Expected disposition and all five fields agree.</td></tr>
+<tr><th scope="row">model-stub / fd4207ab</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">model-stub / 84b6c31d</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">model-stub / 0c9e7b63</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">model-stub / b760a42e</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">model-stub / ed138c95</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">model-stub / 5f0a72d6</th><td>no_case</td><td>no_case</td><td>True</td><td>Expected disposition and all five fields agree.</td></tr>
+<tr><th scope="row">model-stub / 9d7f021b</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">model-stub / 624ec9af</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+<tr><th scope="row">model-stub / 71c54e03</th><td>refused</td><td>refused</td><td>False</td><td>Refused before intake; no case manufactured.</td></tr>
+</tbody></table></div>
+<details><summary>Expected-open / expected-resolved groups and empty denominators</summary><pre tabindex="0" aria-label="Disposition groups">{
+  &quot;baseline-stub&quot;: {
+    &quot;open&quot;: {
+      &quot;assigned&quot;: 0,
+      &quot;incorrect_no_case&quot;: {
+        &quot;ratio&quot;: &quot;N/A&quot;,
+        &quot;total&quot;: 0,
+        &quot;wrong&quot;: 0
+      },
+      &quot;incorrect_resolutions&quot;: {
+        &quot;ratio&quot;: &quot;N/A&quot;,
+        &quot;total&quot;: 0,
+        &quot;wrong&quot;: 0
+      }
+    },
+    &quot;resolved&quot;: {
+      &quot;assigned&quot;: 2,
+      &quot;incorrect_no_case&quot;: {
+        &quot;ratio&quot;: &quot;1/1&quot;,
+        &quot;total&quot;: 1,
+        &quot;wrong&quot;: 1
+      },
+      &quot;incorrect_resolutions&quot;: {
+        &quot;ratio&quot;: &quot;0/1&quot;,
+        &quot;total&quot;: 1,
+        &quot;wrong&quot;: 0
+      }
+    }
+  },
+  &quot;model-stub&quot;: {
+    &quot;open&quot;: {
+      &quot;assigned&quot;: 0,
+      &quot;incorrect_no_case&quot;: {
+        &quot;ratio&quot;: &quot;N/A&quot;,
+        &quot;total&quot;: 0,
+        &quot;wrong&quot;: 0
+      },
+      &quot;incorrect_resolutions&quot;: {
+        &quot;ratio&quot;: &quot;N/A&quot;,
+        &quot;total&quot;: 0,
+        &quot;wrong&quot;: 0
+      }
+    },
+    &quot;resolved&quot;: {
+      &quot;assigned&quot;: 2,
+      &quot;incorrect_no_case&quot;: {
+        &quot;ratio&quot;: &quot;N/A&quot;,
+        &quot;total&quot;: 0,
+        &quot;wrong&quot;: 0
+      },
+      &quot;incorrect_resolutions&quot;: {
+        &quot;ratio&quot;: &quot;0/2&quot;,
+        &quot;total&quot;: 2,
+        &quot;wrong&quot;: 0
+      }
+    }
+  }
+}</pre></details>
+<h2>Timing, cost and provenance</h2>
+<p>No Operator observations were collected. Human review duration and time saved are unavailable. Scripted journey durations are measured separately in JSON; authored extraction latency is unavailable. Actual billed cost is unavailable, including failed and uncertain requests. A maximum reservation is not an actual bill. Empty and zero-success ratios are N/A.</p>
+<p>No gold-guided review or labeled fault injection contributes to this report. Separate synthetic fault-injection tests verify incorrectly resolved amounts and interrupted sends; they are software checks, not observed model behavior.</p>
+<p><a href="evidence/saved-report.json">Download the complete synthetic report JSON</a>. It retains source/manifest/scorer/workflow identities, per-action confirmation/submission/check/case evidence and all outcomes. <a href="walkthrough.html#replay">Replay it locally with one command</a>.</p>
+<p>Report SHA-256: <code>184d558ab848693a0a07d3658e4a78ab312a54291bd9a74929df3fc50cf51ffe</code>. Product source: <code>14641d1b71334665c152d344516c4956082a3815</code>. Core: <code>a1477241fa856df64687e998347e3ecca315619a</code>, called in-process. The frozen manifest and plan ship in the source checkout. Their unchanged PDFs, gold, prompt and first authored outputs are development data; reserved curation/exposure remains unestablished.</p>
+<p><a href="project-status.html">Local, publication, hosted and other-project status</a> remain separate. Replay does not demonstrate the presenter’s own understanding.</p>
+</main>
+</body>
+</html>

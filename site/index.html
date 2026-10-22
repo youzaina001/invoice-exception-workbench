@@ -3,49 +3,33 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Invoice Triage — invitation-only demonstration</title>
-  <style>
-    :root { color-scheme: light; }
-    body { font-family: Georgia, "Iowan Old Style", serif; line-height: 1.5; max-width: 42rem; margin: 2rem auto; padding: 0 1.25rem; color: #1c1917; background: #fafaf9; }
-    nav { font-family: system-ui, sans-serif; font-size: 0.95rem; margin-bottom: 1.5rem; }
-    nav a { margin-right: 1rem; }
-    h1, h2 { line-height: 1.25; }
-    h1 { font-size: 1.75rem; }
-    a { color: #1d4ed8; }
-    code { font-family: ui-monospace, monospace; font-size: 0.95em; }
-  </style>
+  <title>Invoice Triage — synthetic PDF review</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <nav>
-    <a href="index.html">Landing</a>
-    <a href="walkthrough.html">Walkthrough</a>
-    <a href="samples/missing_amount.csv">missing_amount.csv</a>
-    <a href="samples/corrected_amount.csv">corrected_amount.csv</a>
-  </nav>
-  <h1>Invoice Triage</h1>
-  <p>Invoice Triage lets an Operator investigate an incomplete supplier invoice and resolve its exception case inside the workbench. The hosted demonstration gives an invited Reviewer synthetic examples of that workflow. This page is a document. It does not sign a Reviewer in, and it does not call Neon, Clerk, or Render.</p>
-
-  <h2>Who does what</h2>
-  <p>The <strong>Operator</strong> investigates an incomplete supplier invoice and resolves its exception case inside the workbench.</p>
-  <p>A <strong>Reviewer</strong> is an invited person who enters the hosted demonstration and acts as the Operator inside their own Demo Workspace.</p>
-  <p>The <strong>Maintainer</strong> owns the hosted demonstration and may inspect every Demo Workspace.</p>
-  <p>A <strong>Demo Workspace</strong> is one Reviewer's private collection of synthetic invoice submissions, cases, check results, and audit evidence. It begins when that Reviewer signs in for the first time. Other Reviewers cannot read or change its contents.</p>
-  <p>A <strong>Demo Attempt</strong> is one execution of the invoice walkthrough within a Demo Workspace, with its own submissions, cases, check results, and audit evidence. It starts with no invoices.</p>
-
-  <h2>Invitation only</h2>
-  <p>Only an invited Reviewer may enter the operator application. The Maintainer creates each invitation in the Clerk dashboard. Clerk sends the email. The application does not send mail and does not offer an invite screen or public registration. Clerk stays on its free plan. Invitation-only access uses Clerk's invite-only mode. Clerk's paid allowlist is outside this release.</p>
-  <p>The Reviewer's first sign-in creates their Demo Workspace and its first Demo Attempt. The walkthrough publishes the two sample CSVs, and the Reviewer uploads those files in the hosted demonstration. Accepting real invoices is outside this release.</p>
-  <p>Read the <a href="walkthrough.html">walkthrough</a> for resume, Start fresh, and the five-attempt cap. Download <a href="samples/missing_amount.csv">missing_amount.csv</a> and <a href="samples/corrected_amount.csv">corrected_amount.csv</a> from this site.</p>
-
-  <h2>Budget</h2>
-  <p>The hosted demonstration has a strict recurring budget of €0. A payment method, a paid upgrade, and an overage are outside this release. A keep-alive ping or cron, a custom domain, Cloudflare R2, and Resend are outside this release.</p>
-
-  <h2>Free-plan limits</h2>
-  <p>These figures are the hosting decision for this release. They describe the intended free plans. They are not a claim that Neon, Clerk, Render, or Cloudflare Pages is already deployed.</p>
-  <p>The operator application is planned as one Render Free web service. After 15 minutes without inbound traffic the web service spins down, and the next visit takes about a minute while Render shows a loading page. Under that plan, the Pages site stays available during that wait. The instance disk is ephemeral, so submissions, cases, check results, and audit evidence stay in Neon. A keep-alive ping or cron is outside this release. Render cron jobs have a $1 monthly minimum. One always-awake service would consume essentially all 750 free instance hours, and a 31-day month has 744. Exhausting those hours suspends every free web service in the workspace until the next month. The Render workspace has no payment method, so a bandwidth or build-minute overage stops the free service instead of charging.</p>
-  <p>Neon for this demonstration is the free plan. Compute scales to zero after 5 minutes of inactivity and cannot be disabled, and wakes in a few hundred milliseconds. The project includes 1 GB of storage and 100 CU-hours per month. Crossing the compute or transfer allowance suspends compute until the next period. Crossing 1 GB stops writes that would grow storage. Neither case bills an overage.</p>
-
-  <h2>Publication</h2>
-  <p>The <code>site/</code> directory is the static source Cloudflare Pages would publish when commits reach the existing <code>master</code> branch. The branch stays named <code>master</code>. Creating the Cloudflare Pages project and attaching it to <code>master</code> is a dashboard action and has not been done. Neon, Clerk, Render, and Cloudflare Pages are not deployed.</p>
+  <a class="skip" href="#main">Skip to content</a>
+  <nav aria-label="Main"><a href="index.html">Invoice Triage</a><a href="walkthrough.html">Local walkthrough</a><a href="report.html">Comparison report</a><a href="project-status.html">Project status</a></nav>
+<main id="main">
+<h1>Invoice Triage</h1>
+<p>Review a synthetic supplier PDF, confirm the fields, and run checks. A missing amount opens a case. A corrected PDF needs a fresh confirmation and check before the Operator can resolve that case.</p>
+<p class="status">Prepared locally on 22 October 2026. No publication, hosted service or live-model comparison is claimed.</p>
+<p><a href="walkthrough.html">Follow the local PDF walkthrough</a> · <a href="report.html">Read the raw-versus-confirmed report</a></p>
+<h2>Start with the evidence</h2>
+<ul><li><a href="samples/missing_amount.pdf">Missing-amount PDF</a> and <a href="samples/missing_amount.txt">its plain-text alternative</a>.</li>
+<li><a href="samples/corrected_amount.pdf">Corrected PDF</a> and <a href="samples/corrected_amount.txt">its plain-text alternative</a>.</li>
+<li><a href="report.html">Development report: 13 authored examples per arm</a>. The ten-document independent held-out layout and live results remain unavailable.</li></ul>
+<p>This site is static. Reading the report or downloading the examples needs no sign-in, Neon database or model credentials. It makes no backend, database, authentication or analytics calls. The <a href="walkthrough.html#csv">CSV journey</a> is still available.</p>
+<h2>What the checks establish</h2>
+<p>The same explicit confirmation gate applies to deterministic and saved model fields. Passing amount completeness does not prove invoice truth or approve payment. The report separates raw extraction, actual scripted workflow outcomes and unavailable human observations.</p>
+<h2>People and hosted scope</h2>
+<p>The <strong>Operator</strong> investigates an invoice and resolves its case. An invited <strong>Reviewer</strong> acts as the Operator in a private hosted <strong>Demo Workspace</strong>. The <strong>Maintainer</strong> owns that demonstration and can inspect every workspace. Each <strong>Demo Attempt</strong> is one walkthrough with its own submissions, cases, checks and audit evidence.</p>
+<p>The hosted CSV design resumes the current attempt when a Reviewer returns. Start fresh creates an empty attempt and leaves previous attempts read-only. A workspace keeps five attempts; a sixth removes the oldest. See <a href="walkthrough.html#hosted">the hosted scope and its verification limits</a>. Hosted PDF routes remain disabled.</p>
+<h2>Budget and historical assumptions</h2>
+<p>The optional hosted demonstration has a recurring €0 boundary: no payment method, paid upgrade or overage, keep-alive, custom domain, new storage/email service or invite UI. The Maintainer creates invitations in the provider dashboard; provider-owned invitation mail is separate from application behavior. The finite $5 eligible-credit extraction allowance does not expand the hosting budget.</p>
+<p><strong>Historical assumptions:</strong> the service selection dates from 3 October 2026. Provider quotas and idle/wake behavior have not been reverified here. Earlier figures are not current guarantees and must be checked before provisioning.</p>
+<h2>Publication and other projects</h2>
+<p>The existing static hosting plan keeps <code>site/</code> and the <code>master</code> branch. No default-branch or hosting change was made. There is no newly verified public URL, and Neon, Clerk, Render and Cloudflare Pages acceptance is unverified. Publication and provisioning remain separate user actions.</p>
+<p><a href="project-status.html#airflow">Airflow governance evidence/status</a> and <a href="project-status.html#offshell">Offshell live-coding status</a> remain separate. Completed local invoice software does not establish that the whole portfolio or the presenter's learning is complete.</p>
+</main>
 </body>
 </html>

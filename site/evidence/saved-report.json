@@ -1,0 +1,1884 @@
+{
+  "actual_cost_usd": null,
+  "core": {
+    "call": "in-process run_suite",
+    "revision": "a1477241fa856df64687e998347e3ecca315619a",
+    "source": "/home/youzaina001/workdir/projects/airflow-dq-agent-t01-core-20261018/src/airflow_dq_agent/__init__.py"
+  },
+  "evidence_class": "authored-example",
+  "extraction_seconds": null,
+  "live_comparison": "unavailable",
+  "operator_observations": [],
+  "plan_sha256": "184ff1b11b0bdb945ebf214f9c7057f068d45b17aa1f3d5630f8afd05161bd46",
+  "policy": "confirm-unchanged-then-declared-source-replacement-v1",
+  "raw": {
+    "analysis_id": "7a7fc062f5d49791a3ecf827204fa97492930b4b453bded5d620d59f7d6649fe",
+    "arms": {
+      "baseline-stub": {
+        "definite_fields": {
+          "amount_minor": {
+            "accuracy": "9/11",
+            "correct": 9,
+            "total": 11
+          },
+          "currency": {
+            "accuracy": "11/11",
+            "correct": 11,
+            "total": 11
+          },
+          "invoice_date": {
+            "accuracy": "11/11",
+            "correct": 11,
+            "total": 11
+          },
+          "invoice_id": {
+            "accuracy": "11/11",
+            "correct": 11,
+            "total": 11
+          },
+          "supplier_id": {
+            "accuracy": "11/11",
+            "correct": 11,
+            "total": 11
+          }
+        },
+        "failures": {},
+        "false_markings": {
+          "amount_minor": {
+            "false_missing": 1,
+            "false_value": 1
+          },
+          "currency": {
+            "false_value": 1
+          },
+          "invoice_date": {},
+          "invoice_id": {
+            "false_ambiguous": 1
+          },
+          "supplier_id": {}
+        },
+        "primary": {
+          "correct": 8,
+          "total": 13
+        },
+        "state_confusion": {
+          "amount_minor": {
+            "ambiguous->value": 1,
+            "missing->missing": 1,
+            "value->missing": 1,
+            "value->value": 10
+          },
+          "currency": {
+            "ambiguous->value": 1,
+            "missing->missing": 1,
+            "value->value": 11
+          },
+          "invoice_date": {
+            "ambiguous->ambiguous": 1,
+            "missing->missing": 1,
+            "value->value": 11
+          },
+          "invoice_id": {
+            "ambiguous->ambiguous": 1,
+            "missing->ambiguous": 1,
+            "value->value": 11
+          },
+          "supplier_id": {
+            "ambiguous->ambiguous": 1,
+            "missing->missing": 1,
+            "value->value": 11
+          }
+        }
+      },
+      "model-stub": {
+        "definite_fields": {
+          "amount_minor": {
+            "accuracy": "10/11",
+            "correct": 10,
+            "total": 11
+          },
+          "currency": {
+            "accuracy": "10/11",
+            "correct": 10,
+            "total": 11
+          },
+          "invoice_date": {
+            "accuracy": "10/11",
+            "correct": 10,
+            "total": 11
+          },
+          "invoice_id": {
+            "accuracy": "10/11",
+            "correct": 10,
+            "total": 11
+          },
+          "supplier_id": {
+            "accuracy": "11/11",
+            "correct": 11,
+            "total": 11
+          }
+        },
+        "failures": {
+          "extract/saved_stub_refusal": 1
+        },
+        "false_markings": {
+          "amount_minor": {
+            "false_ambiguous": 1
+          },
+          "currency": {},
+          "invoice_date": {},
+          "invoice_id": {},
+          "supplier_id": {}
+        },
+        "primary": {
+          "correct": 11,
+          "total": 13
+        },
+        "state_confusion": {
+          "amount_minor": {
+            "ambiguous->ambiguous": 1,
+            "missing->ambiguous": 1,
+            "value->failure": 1,
+            "value->value": 10
+          },
+          "currency": {
+            "ambiguous->ambiguous": 1,
+            "missing->missing": 1,
+            "value->failure": 1,
+            "value->value": 10
+          },
+          "invoice_date": {
+            "ambiguous->ambiguous": 1,
+            "missing->missing": 1,
+            "value->failure": 1,
+            "value->value": 10
+          },
+          "invoice_id": {
+            "ambiguous->ambiguous": 1,
+            "missing->missing": 1,
+            "value->failure": 1,
+            "value->value": 10
+          },
+          "supplier_id": {
+            "ambiguous->failure": 1,
+            "missing->missing": 1,
+            "value->value": 11
+          }
+        }
+      }
+    },
+    "comparison": "Counts differ on this corpus; no general superiority is established.",
+    "kind": "offline-stub",
+    "paired": {
+      "0c9e7b63": {
+        "baseline-stub": {
+          "exact": true,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "18e73a9c": {
+        "baseline-stub": {
+          "exact": true,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "3a51d9e0": {
+        "baseline-stub": {
+          "exact": false,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "5f0a72d6": {
+        "baseline-stub": {
+          "exact": false,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "624ec9af": {
+        "baseline-stub": {
+          "exact": true,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "71c54e03": {
+        "baseline-stub": {
+          "exact": true,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "84b6c31d": {
+        "baseline-stub": {
+          "exact": true,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "9d7f021b": {
+        "baseline-stub": {
+          "exact": true,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": false,
+          "failure": {
+            "code": "saved_stub_refusal",
+            "stage": "extract",
+            "status": "failure",
+            "version": "1"
+          }
+        }
+      },
+      "a6f78492": {
+        "baseline-stub": {
+          "exact": false,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "b760a42e": {
+        "baseline-stub": {
+          "exact": true,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "c2a83501": {
+        "baseline-stub": {
+          "exact": true,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": false,
+          "failure": null
+        }
+      },
+      "ed138c95": {
+        "baseline-stub": {
+          "exact": false,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      },
+      "fd4207ab": {
+        "baseline-stub": {
+          "exact": false,
+          "failure": null
+        },
+        "model-stub": {
+          "exact": true,
+          "failure": null
+        }
+      }
+    },
+    "provenance": {
+      "curator": null,
+      "developers": [
+        "Codex builder"
+      ],
+      "exposure": [
+        "Codex builder: all thirteen development documents and labels"
+      ],
+      "frozen_at": "2026-10-18T12:42:26.411791+00:00",
+      "reserved_status": "not-established"
+    },
+    "scope": "development",
+    "scorer_sha256": "db70822eb278554e11e885d9c400368736b36641ac561441c4cbfe6f7b29af9c",
+    "source_base": "c35cc65210ad8e1e963edefc3cd14170a6b23ce4",
+    "version": "1"
+  },
+  "rows": [
+    {
+      "accepted": true,
+      "arm": "baseline-stub",
+      "confirmation": "explicit-scripted",
+      "correct": true,
+      "document": "18e73a9c",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "a9fab5a9cc00f008483d937e49f2ccdb72dcfe157fbceaebe15c972cb50eca62",
+          "draft_id": "ad497dd2aeb04b5d85eccb6c51f5e1fb",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "a9fab5a9cc00f008483d937e49f2ccdb72dcfe157fbceaebe15c972cb50eca62",
+          "draft_id": "ad497dd2aeb04b5d85eccb6c51f5e1fb",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0001",
+            "made_current": true,
+            "submission_id": "6f329b53cd1a4cc29ccb2750a819c1fa",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": false,
+          "case_id": null,
+          "report_id": "b1f53c7111d14ed38dfaf102c8e7d077",
+          "run_id": "e2024cb17ba84da68355bad5d28b9ae0",
+          "status": "pass"
+        }
+      ],
+      "expected": "no_case",
+      "explanation": "Expected disposition and all five fields agree.",
+      "field_disagreements": [],
+      "fields": {
+        "amount_minor": {
+          "evidence": [],
+          "state": "value",
+          "value": 12500
+        },
+        "currency": {
+          "evidence": [],
+          "state": "value",
+          "value": "EUR"
+        },
+        "invoice_date": {
+          "evidence": [],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Inv-0001"
+        },
+        "supplier_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": true,
+      "journey_seconds": 0.39342796099663246,
+      "outcome": "no_case",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "baseline-stub",
+      "confirmation": "explicit-scripted",
+      "correct": true,
+      "document": "c2a83501",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "736aba9f02dce01860c2f0add5dbd133f7bf61a4d70b09f34e00e7c973ab249b",
+          "draft_id": "6931e63efd1b4ef39d03c64972727204",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "736aba9f02dce01860c2f0add5dbd133f7bf61a4d70b09f34e00e7c973ab249b",
+          "draft_id": "6931e63efd1b4ef39d03c64972727204",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0002",
+            "made_current": true,
+            "submission_id": "4f5eb506e308456a811b4b36b871fb5f",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": true,
+          "case_id": "c8c7c1454c8640c7991e634003f877af",
+          "report_id": "b7859cc813a443d9950c456eaa53e12b",
+          "run_id": "20a94ce0a90c4c08b14b5fdda392e990",
+          "status": "fail"
+        },
+        {
+          "action": "confirm",
+          "binding": "7751da0b07f29f613c16969e740129666e7509344a37142c1e44fb007aea5026",
+          "draft_id": "f69acbbcecf44c98a40c05d64e5e65da",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "7751da0b07f29f613c16969e740129666e7509344a37142c1e44fb007aea5026",
+          "draft_id": "f69acbbcecf44c98a40c05d64e5e65da",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0002",
+            "made_current": true,
+            "submission_id": "dae2b5fca8774ec9a9771e170e453d0b",
+            "version": 2
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": true,
+          "case_id": "c8c7c1454c8640c7991e634003f877af",
+          "report_id": "6f4a91d98937435bb4942e8ac81428fc",
+          "run_id": "5609c5c7ca28440fa2e61bec70b7ae92",
+          "status": "pass"
+        },
+        {
+          "action": "resolve",
+          "reason": "ok",
+          "resolved": true
+        }
+      ],
+      "expected": "resolved",
+      "explanation": "Expected disposition and all five fields agree.",
+      "field_disagreements": [],
+      "fields": {
+        "amount_minor": {
+          "evidence": [
+            {
+              "end": 121,
+              "page": 1,
+              "start": 115
+            }
+          ],
+          "state": "value",
+          "value": 12500
+        },
+        "currency": {
+          "evidence": [
+            {
+              "end": 99,
+              "page": 1,
+              "start": 96
+            }
+          ],
+          "state": "value",
+          "value": "USD"
+        },
+        "invoice_date": {
+          "evidence": [
+            {
+              "end": 85,
+              "page": 1,
+              "start": 75
+            }
+          ],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [
+            {
+              "end": 38,
+              "page": 1,
+              "start": 30
+            }
+          ],
+          "state": "value",
+          "value": "Inv-0002"
+        },
+        "supplier_id": {
+          "evidence": [
+            {
+              "end": 60,
+              "page": 1,
+              "start": 52
+            }
+          ],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": true,
+      "journey_seconds": 0.7308602490011253,
+      "outcome": "resolved",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "baseline-stub",
+      "confirmation": "explicit-scripted",
+      "correct": false,
+      "document": "a6f78492",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "b7ec8bb640e387f011a5165a02f133ba21e262a861c5c62c61cc1c5ef199bf51",
+          "draft_id": "30e9401a0af14a688fd75d8381fc39a0",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "b7ec8bb640e387f011a5165a02f133ba21e262a861c5c62c61cc1c5ef199bf51",
+          "draft_id": "30e9401a0af14a688fd75d8381fc39a0",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0003",
+            "made_current": true,
+            "submission_id": "5aa1b04db1564f4c8856e6c99cd47c99",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": true,
+          "case_id": "3bd90a603da6482794d2735e53d22560",
+          "report_id": "aabc0c8eee6942b9bab547d5fe02d51a",
+          "run_id": "60f211195efd41bda139fca87592c480",
+          "status": "fail"
+        }
+      ],
+      "expected": "no_case",
+      "explanation": "Field disagreements: amount_minor; actual open, expected no_case. ",
+      "field_disagreements": [
+        "amount_minor"
+      ],
+      "fields": {
+        "amount_minor": {
+          "evidence": [],
+          "state": "missing",
+          "value": null
+        },
+        "currency": {
+          "evidence": [],
+          "state": "value",
+          "value": "EUR"
+        },
+        "invoice_date": {
+          "evidence": [],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Inv-0003"
+        },
+        "supplier_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": false,
+      "journey_seconds": 0.3360902719941805,
+      "outcome": "open",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "baseline-stub",
+      "confirmation": "explicit-scripted",
+      "correct": false,
+      "document": "3a51d9e0",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "6303bf462281a384ab94c36634f13da53adf5e73bf5315bd1b8ad0e897047aaf",
+          "draft_id": "29df447d1d7c417794978902ace75199",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "6303bf462281a384ab94c36634f13da53adf5e73bf5315bd1b8ad0e897047aaf",
+          "draft_id": "29df447d1d7c417794978902ace75199",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0004",
+            "made_current": true,
+            "submission_id": "dc772e37bec14006a88ad8684e5113bc",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": false,
+          "case_id": null,
+          "report_id": "ea88951b64544ade91530ffbfd3afd08",
+          "run_id": "60885ce79a034da6b5be484d1800fbc1",
+          "status": "pass"
+        }
+      ],
+      "expected": "resolved",
+      "explanation": "Field disagreements: amount_minor; actual no_case, expected resolved. ",
+      "field_disagreements": [
+        "amount_minor"
+      ],
+      "fields": {
+        "amount_minor": {
+          "evidence": [],
+          "state": "value",
+          "value": 10000
+        },
+        "currency": {
+          "evidence": [],
+          "state": "value",
+          "value": "USD"
+        },
+        "invoice_date": {
+          "evidence": [],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Inv-0004"
+        },
+        "supplier_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": false,
+      "journey_seconds": 0.31533224399754545,
+      "outcome": "no_case",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "baseline-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "fd4207ab",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "c659408248c5996c37aa6dbb716995b8924b2e9dc2fa410651c2e46d8f297419",
+          "draft_id": "4e3c37d76c3749a68e7f128ca3d49ba3",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.312708739998925,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "baseline-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "84b6c31d",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "9b2ca1a3516909236540e85e1c51c819d88697a85fc616cbfb8dc98738570270",
+          "draft_id": "219db39c4b064e69bf671733c17b0998",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.30969616799848154,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "baseline-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "0c9e7b63",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "bb10fa22431f8bba171f90a3ff7fd662d23f85232c0eda906f650286c6fa0ceb",
+          "draft_id": "59f075417a184e6d9bdc69f7e2f10169",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.28575277899653884,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "baseline-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "b760a42e",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "3407492e88553a8b35dffd47fda71a002b2802329faca6e0657b618f53b0f1ac",
+          "draft_id": "50ce1da6eab7464d906077e9dfd3f911",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.31254731900116894,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "baseline-stub",
+      "confirmation": "explicit-scripted",
+      "correct": false,
+      "document": "ed138c95",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "a2bd03b17c4fe2d7f7db62fe46bd429e3f5644cd0d19618d8b5179897c0f5a1f",
+          "draft_id": "37e57961f5134a48acc52a1847ceabf8",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "a2bd03b17c4fe2d7f7db62fe46bd429e3f5644cd0d19618d8b5179897c0f5a1f",
+          "draft_id": "37e57961f5134a48acc52a1847ceabf8",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0009",
+            "made_current": true,
+            "submission_id": "70a961573d784d60a572484b45e1788d",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": false,
+          "case_id": null,
+          "report_id": "61a890711804493fbae0ba7920d6214c",
+          "run_id": "b89f4d9174ba4f23abb1d30b9ab0dc3b",
+          "status": "pass"
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Field disagreements: currency; actual no_case, expected refused. ",
+      "field_disagreements": [
+        "currency"
+      ],
+      "fields": {
+        "amount_minor": {
+          "evidence": [],
+          "state": "value",
+          "value": 12500
+        },
+        "currency": {
+          "evidence": [],
+          "state": "value",
+          "value": "EUR"
+        },
+        "invoice_date": {
+          "evidence": [],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Inv-0009"
+        },
+        "supplier_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": false,
+      "journey_seconds": 0.32266137200349476,
+      "outcome": "no_case",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "baseline-stub",
+      "confirmation": "explicit-scripted",
+      "correct": false,
+      "document": "5f0a72d6",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "d7c46e8ac3b236512157482f60c13aa629647b75669aabffc282760bb677101a",
+          "draft_id": "752178f87ca44f628105db3fdee51e17",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "d7c46e8ac3b236512157482f60c13aa629647b75669aabffc282760bb677101a",
+          "draft_id": "752178f87ca44f628105db3fdee51e17",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0010",
+            "made_current": true,
+            "submission_id": "5507e75f7ab94f5d98ce6cf73ecafc03",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": false,
+          "case_id": null,
+          "report_id": "4368811f416c4a2091f693061ed02aeb",
+          "run_id": "764e00659cb949959479b6c4fd1f6851",
+          "status": "pass"
+        }
+      ],
+      "expected": "no_case",
+      "explanation": "Field disagreements: amount_minor; actual no_case, expected no_case. ",
+      "field_disagreements": [
+        "amount_minor"
+      ],
+      "fields": {
+        "amount_minor": {
+          "evidence": [],
+          "state": "value",
+          "value": 99900
+        },
+        "currency": {
+          "evidence": [],
+          "state": "value",
+          "value": "USD"
+        },
+        "invoice_date": {
+          "evidence": [],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Inv-0010"
+        },
+        "supplier_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": false,
+      "journey_seconds": 0.32653765699797077,
+      "outcome": "no_case",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "baseline-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "9d7f021b",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "2ee68150726d42fb0ba77f30fe45cd4d20a9a394be3df4e9298a66e66b417f72",
+          "draft_id": "6e23d4313dc04d84844e1b3fd9364944",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.3092631609979435,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "baseline-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "624ec9af",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "7264a3377e1e904463d07c1823134db21ad02b02b1fd0e9b2a4ae1ec7247c5b8",
+          "draft_id": "4fe9b5a0f1b44636b3d0465cc9bdd081",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.3138118350034347,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "baseline-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "71c54e03",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "0dee8cb78b3bc31db70755eaf0398f8ac9e5589291c57f90d85b05f41ff0219d",
+          "draft_id": "923dbe7dd2e846ee8c01fa588e215d72",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.30788196199864615,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "model-stub",
+      "confirmation": "explicit-scripted",
+      "correct": true,
+      "document": "18e73a9c",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "218fceca5b6c73dd5115fd3747f883ec8bed56fd6654a0aba5f47b218a635cd5",
+          "draft_id": "cde2571dec734330bf11c4373fc41a77",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "218fceca5b6c73dd5115fd3747f883ec8bed56fd6654a0aba5f47b218a635cd5",
+          "draft_id": "cde2571dec734330bf11c4373fc41a77",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0001",
+            "made_current": true,
+            "submission_id": "71eb71c6bbc84d06af8e21b180736ac9",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": false,
+          "case_id": null,
+          "report_id": "8ab598de20fd4336bf8c71f8284066f5",
+          "run_id": "62bbcff0a60247a58b385c1854de5ef1",
+          "status": "pass"
+        }
+      ],
+      "expected": "no_case",
+      "explanation": "Expected disposition and all five fields agree.",
+      "field_disagreements": [],
+      "fields": {
+        "amount_minor": {
+          "evidence": [],
+          "state": "value",
+          "value": 12500
+        },
+        "currency": {
+          "evidence": [],
+          "state": "value",
+          "value": "EUR"
+        },
+        "invoice_date": {
+          "evidence": [],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Inv-0001"
+        },
+        "supplier_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": true,
+      "journey_seconds": 0.3370683379980619,
+      "outcome": "no_case",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "model-stub",
+      "confirmation": "explicit-scripted",
+      "correct": true,
+      "document": "c2a83501",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "b3f9e011688fc52a313871d400a4dd9bb32a8a3a05e4545f8cec5e8acb59f038",
+          "draft_id": "93f314a8b58148e8a93b9e4b514e292b",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "b3f9e011688fc52a313871d400a4dd9bb32a8a3a05e4545f8cec5e8acb59f038",
+          "draft_id": "93f314a8b58148e8a93b9e4b514e292b",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0002",
+            "made_current": true,
+            "submission_id": "9cc3bcecb1f24218a6381464f550c4bf",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": true,
+          "case_id": "63320d0661a446bb90274c0e43b942b9",
+          "report_id": "a1699853be224f5586438553e46f6e29",
+          "run_id": "715e958b5cc14ab9bca9e3727a1553c7",
+          "status": "fail"
+        },
+        {
+          "action": "confirm",
+          "binding": "376bf054275958baef84b08552fafa34929d9d6f192ab45e19078548325d50d6",
+          "draft_id": "79796d6954834b299a722ca1f7b49362",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "376bf054275958baef84b08552fafa34929d9d6f192ab45e19078548325d50d6",
+          "draft_id": "79796d6954834b299a722ca1f7b49362",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0002",
+            "made_current": true,
+            "submission_id": "077d2cef51784e9184a5f28b227e957a",
+            "version": 2
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": true,
+          "case_id": "63320d0661a446bb90274c0e43b942b9",
+          "report_id": "4c8a4f105ce94525bcde8afcb4898e98",
+          "run_id": "32c229125315418ca15f44d663b5c1fd",
+          "status": "pass"
+        },
+        {
+          "action": "resolve",
+          "reason": "ok",
+          "resolved": true
+        }
+      ],
+      "expected": "resolved",
+      "explanation": "Expected disposition and all five fields agree.",
+      "field_disagreements": [],
+      "fields": {
+        "amount_minor": {
+          "evidence": [
+            {
+              "end": 121,
+              "page": 1,
+              "start": 115
+            }
+          ],
+          "state": "value",
+          "value": 12500
+        },
+        "currency": {
+          "evidence": [
+            {
+              "end": 99,
+              "page": 1,
+              "start": 96
+            }
+          ],
+          "state": "value",
+          "value": "USD"
+        },
+        "invoice_date": {
+          "evidence": [
+            {
+              "end": 85,
+              "page": 1,
+              "start": 75
+            }
+          ],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [
+            {
+              "end": 38,
+              "page": 1,
+              "start": 30
+            }
+          ],
+          "state": "value",
+          "value": "Inv-0002"
+        },
+        "supplier_id": {
+          "evidence": [
+            {
+              "end": 60,
+              "page": 1,
+              "start": 52
+            }
+          ],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": true,
+      "journey_seconds": 0.6567189659981523,
+      "outcome": "resolved",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "model-stub",
+      "confirmation": "explicit-scripted",
+      "correct": true,
+      "document": "a6f78492",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "fe659980e87d6716d7acf77e2471ad23f7f62c29e9e9dcfdf040bfddd2f784b6",
+          "draft_id": "db1e233dce094a989b51256b4ee18469",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "fe659980e87d6716d7acf77e2471ad23f7f62c29e9e9dcfdf040bfddd2f784b6",
+          "draft_id": "db1e233dce094a989b51256b4ee18469",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0003",
+            "made_current": true,
+            "submission_id": "b3a94939954040c6b80b0545cf6a0c16",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": false,
+          "case_id": null,
+          "report_id": "c006be6c9e2f47b1bf55ed90e7fdfad1",
+          "run_id": "2213e6aa3f35473199c232859835ee14",
+          "status": "pass"
+        }
+      ],
+      "expected": "no_case",
+      "explanation": "Expected disposition and all five fields agree.",
+      "field_disagreements": [],
+      "fields": {
+        "amount_minor": {
+          "evidence": [],
+          "state": "value",
+          "value": 0
+        },
+        "currency": {
+          "evidence": [],
+          "state": "value",
+          "value": "EUR"
+        },
+        "invoice_date": {
+          "evidence": [],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Inv-0003"
+        },
+        "supplier_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": true,
+      "journey_seconds": 0.3187813139957143,
+      "outcome": "no_case",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "model-stub",
+      "confirmation": "explicit-scripted",
+      "correct": true,
+      "document": "3a51d9e0",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "45103460a7d8cfdacdb60d1050ade49fc4e8daf9454cc8f4b380b9c2bbc4ca31",
+          "draft_id": "7ff5577ca16144ea850d30b42de47e85",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "45103460a7d8cfdacdb60d1050ade49fc4e8daf9454cc8f4b380b9c2bbc4ca31",
+          "draft_id": "7ff5577ca16144ea850d30b42de47e85",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0004",
+            "made_current": true,
+            "submission_id": "edcc163e0168485586a745b35f296af1",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": true,
+          "case_id": "36f33fab4a2a4dc98ac1efabca2cb8e7",
+          "report_id": "d50d246ff5b74126a9d934aa24fe3c7f",
+          "run_id": "c679967bef964a67aee37d8d8662e25c",
+          "status": "fail"
+        },
+        {
+          "action": "confirm",
+          "binding": "420e83ff7af0ee8ec4e8fa04bb9a6031e5ff40777ab5246037db5a8b434e2d37",
+          "draft_id": "22db020a4e7c4719bedf078ea19f4b9e",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "420e83ff7af0ee8ec4e8fa04bb9a6031e5ff40777ab5246037db5a8b434e2d37",
+          "draft_id": "22db020a4e7c4719bedf078ea19f4b9e",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0004",
+            "made_current": true,
+            "submission_id": "93753c430e0b41ec8a68f4fc2236fe93",
+            "version": 2
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": true,
+          "case_id": "36f33fab4a2a4dc98ac1efabca2cb8e7",
+          "report_id": "9419a65304d346c5bde04d506925269a",
+          "run_id": "98cb628b26e341a882b8e9036875d43a",
+          "status": "pass"
+        },
+        {
+          "action": "resolve",
+          "reason": "ok",
+          "resolved": true
+        }
+      ],
+      "expected": "resolved",
+      "explanation": "Expected disposition and all five fields agree.",
+      "field_disagreements": [],
+      "fields": {
+        "amount_minor": {
+          "evidence": [
+            {
+              "end": 138,
+              "page": 1,
+              "start": 132
+            }
+          ],
+          "state": "value",
+          "value": 12500
+        },
+        "currency": {
+          "evidence": [
+            {
+              "end": 99,
+              "page": 1,
+              "start": 96
+            }
+          ],
+          "state": "value",
+          "value": "USD"
+        },
+        "invoice_date": {
+          "evidence": [
+            {
+              "end": 85,
+              "page": 1,
+              "start": 75
+            }
+          ],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [
+            {
+              "end": 38,
+              "page": 1,
+              "start": 30
+            }
+          ],
+          "state": "value",
+          "value": "Inv-0004"
+        },
+        "supplier_id": {
+          "evidence": [
+            {
+              "end": 60,
+              "page": 1,
+              "start": 52
+            }
+          ],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": true,
+      "journey_seconds": 0.6721414509956958,
+      "outcome": "resolved",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "model-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "fd4207ab",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "bb605e1145fd388559195acc57e1e61df4481ff0cec99dd65c49fc8bebbd3e5b",
+          "draft_id": "75c6f3d419ad4fdfae2b8af3a4d20fab",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.2874742679996416,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "model-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "84b6c31d",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "893b462f16499952ae6715567eb7f8b415daa635dc4f8152bf552210c7dde036",
+          "draft_id": "25216ca5de324b339d92798b56dcf9a4",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.3073840330034727,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "model-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "0c9e7b63",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "67a38030e063a98a5f497e30327c01fdc59345281deb9cbe56020b1465f16d69",
+          "draft_id": "779ece0c014445d8a7cc65b2efb5e6bc",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.30708456200227374,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "model-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "b760a42e",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "ddd45c7ce960e89cf3a012a021698cc4c876da9b3eb2067d549a7251b3b10d36",
+          "draft_id": "206d665130b84e318eb8721fa9bf381d",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.3048583029958536,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "model-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "ed138c95",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "7ae69b84a9c7a17c9350839554941b0fa7c4f00d9f27bbdc28dffc54e9832930",
+          "draft_id": "843589a1e5bd408bb7003137e8d29824",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.29226930800359696,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": true,
+      "arm": "model-stub",
+      "confirmation": "explicit-scripted",
+      "correct": true,
+      "document": "5f0a72d6",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "6ece747c0f9f272362096e86b5cc5c13c8c856ac99ed7c51e4eb463f70a25eed",
+          "draft_id": "3564d726be7a41e7ba5ebd75b40d3f54",
+          "revision": 1,
+          "status": 200
+        },
+        {
+          "action": "intake",
+          "binding": "6ece747c0f9f272362096e86b5cc5c13c8c856ac99ed7c51e4eb463f70a25eed",
+          "draft_id": "3564d726be7a41e7ba5ebd75b40d3f54",
+          "revision": 1,
+          "status": 200,
+          "submission": {
+            "duplicate": false,
+            "invoice_ref": "Inv-0010",
+            "made_current": true,
+            "submission_id": "618b09f333224eb8a2ce2bcb5940875f",
+            "version": 1
+          }
+        },
+        {
+          "action": "checks",
+          "case_created": false,
+          "case_id": null,
+          "report_id": "6e52b82d9ddd43199bf3d2d2d5fa4b0c",
+          "run_id": "7a4b863635c34f9e8808142ba04a1c8c",
+          "status": "pass"
+        }
+      ],
+      "expected": "no_case",
+      "explanation": "Expected disposition and all five fields agree.",
+      "field_disagreements": [],
+      "fields": {
+        "amount_minor": {
+          "evidence": [],
+          "state": "value",
+          "value": 12500
+        },
+        "currency": {
+          "evidence": [],
+          "state": "value",
+          "value": "USD"
+        },
+        "invoice_date": {
+          "evidence": [],
+          "state": "value",
+          "value": "2026-10-18"
+        },
+        "invoice_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Inv-0010"
+        },
+        "supplier_id": {
+          "evidence": [],
+          "state": "value",
+          "value": "Sup-0042"
+        }
+      },
+      "fields_agree": true,
+      "journey_seconds": 0.3374210239999229,
+      "outcome": "no_case",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "model-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "9d7f021b",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "04f39318f392d628558ded4b96d0eb9e0c0b6dd6b77b6d4d7438d3980911f182",
+          "draft_id": "a593f7cacf90416589b6ec0b99b907e1",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.31171676400117576,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "model-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "624ec9af",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "7d797b21a2c448bd5219aaeb5abcd465e3c692bde8eb64c6c4b122f9b6769693",
+          "draft_id": "ab2049934b0a4ab1883b8e2315472d57",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.29476039599830983,
+      "outcome": "refused",
+      "review_seconds": null
+    },
+    {
+      "accepted": false,
+      "arm": "model-stub",
+      "confirmation": "not-confirmable",
+      "correct": false,
+      "document": "71c54e03",
+      "events": [
+        {
+          "action": "confirm",
+          "binding": "cb7c1c70800667214688b88c9a7daa7a0119e38977cba94db6e7258675fa86b7",
+          "draft_id": "97ae250788164f37ab81fde778db99af",
+          "revision": 1,
+          "status": 400
+        }
+      ],
+      "expected": "refused",
+      "explanation": "Refused before intake; no case manufactured.",
+      "field_disagreements": [
+        "invoice_id",
+        "supplier_id",
+        "invoice_date",
+        "currency",
+        "amount_minor"
+      ],
+      "fields": null,
+      "fields_agree": false,
+      "journey_seconds": 0.30096565400162945,
+      "outcome": "refused",
+      "review_seconds": null
+    }
+  ],
+  "version": "1",
+  "workflow": {
+    "baseline-stub": {
+      "actual_cost_usd": null,
+      "assigned": 13,
+      "by_expected": {
+        "open": {
+          "assigned": 0,
+          "incorrect_no_case": {
+            "ratio": "N/A",
+            "total": 0,
+            "wrong": 0
+          },
+          "incorrect_resolutions": {
+            "ratio": "N/A",
+            "total": 0,
+            "wrong": 0
+          }
+        },
+        "resolved": {
+          "assigned": 2,
+          "incorrect_no_case": {
+            "ratio": "1/1",
+            "total": 1,
+            "wrong": 1
+          },
+          "incorrect_resolutions": {
+            "ratio": "0/1",
+            "total": 1,
+            "wrong": 0
+          }
+        }
+      },
+      "correctly_cleared": 2,
+      "correctly_processed": 2,
+      "cost_per_correctly_cleared": null,
+      "expected": {
+        "no_case": 3,
+        "refused": 8,
+        "resolved": 2
+      },
+      "incorrect_no_case": {
+        "ratio": "3/4",
+        "total": 4,
+        "wrong": 3
+      },
+      "incorrect_resolutions": {
+        "ratio": "0/1",
+        "total": 1,
+        "wrong": 0
+      },
+      "outcomes": {
+        "no_case": 4,
+        "open": 1,
+        "refused": 7,
+        "resolved": 1
+      }
+    },
+    "model-stub": {
+      "actual_cost_usd": null,
+      "assigned": 13,
+      "by_expected": {
+        "open": {
+          "assigned": 0,
+          "incorrect_no_case": {
+            "ratio": "N/A",
+            "total": 0,
+            "wrong": 0
+          },
+          "incorrect_resolutions": {
+            "ratio": "N/A",
+            "total": 0,
+            "wrong": 0
+          }
+        },
+        "resolved": {
+          "assigned": 2,
+          "incorrect_no_case": {
+            "ratio": "N/A",
+            "total": 0,
+            "wrong": 0
+          },
+          "incorrect_resolutions": {
+            "ratio": "0/2",
+            "total": 2,
+            "wrong": 0
+          }
+        }
+      },
+      "correctly_cleared": 5,
+      "correctly_processed": 5,
+      "cost_per_correctly_cleared": null,
+      "expected": {
+        "no_case": 3,
+        "refused": 8,
+        "resolved": 2
+      },
+      "incorrect_no_case": {
+        "ratio": "0/3",
+        "total": 3,
+        "wrong": 0
+      },
+      "incorrect_resolutions": {
+        "ratio": "0/2",
+        "total": 2,
+        "wrong": 0
+      },
+      "outcomes": {
+        "no_case": 3,
+        "refused": 8,
+        "resolved": 2
+      }
+    }
+  },
+  "workflow_code_sha256": "3e6c53a4aa67347aa1b6a994e688b2c65cac5b051ccb7d0b97a2487aa25ab7d9"
+}
