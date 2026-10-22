@@ -178,6 +178,8 @@ an application process with old generated role settings.
 4. Select **Confirm reviewed PDF**, then **Submit confirmed PDF**. Editing fields
    or replacing the source invalidates the earlier confirmation. Intake rechecks
    the source, revision, complete fields and local ownership in its transaction.
+   Unsaved changes are refused by Confirm and Submit, including with JavaScript
+   disabled. Select **Save reviewed fields**, review, and confirm again.
 5. Select **Run checks on current submission**. Both supplied PDFs pass the
    installed core's completeness check without opening a case. A real zero stays
    zero. Confirmation and a passing check do not approve payment.

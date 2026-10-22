@@ -180,13 +180,29 @@ def read_source(engine: Engine, draft_id: str) -> bytes:
         )
 
 
-def _current(draft: dict[str, Any], revision: int, binding: str | None = None) -> None:
+def _current(
+    draft: dict[str, Any],
+    revision: int,
+    binding: str | None = None,
+    reviewed_fields: object | None = None,
+) -> None:
     if revision != draft["revision"] or (
         binding is not None and binding != draft["binding"]
     ):
         raise PDFConflict(
             "PDF source or reviewed revision changed; review and confirm again"
         )
+    if reviewed_fields is not None:
+        if draft["fields"] is None:
+            raise ValueError("Replace the refused PDF source before reviewing fields")
+        reviewed = validate_result(
+            {"version": "1", "status": "ok", "fields": reviewed_fields}, draft["pages"]
+        )
+        assert isinstance(reviewed, Success)
+        for name, field in reviewed.fields.items().items():
+            saved = draft["fields"][name]
+            if field.state != saved["state"] or field.value != saved["value"]:
+                raise PDFConflict("Save reviewed fields, then review and confirm again")
 
 
 def edit_draft(
@@ -257,12 +273,17 @@ def _verify_source(conn: Connection, draft: dict[str, Any]) -> None:
 
 
 def confirm_draft(
-    engine: Engine, draft_id: str, *, revision: int, binding: str
+    engine: Engine,
+    draft_id: str,
+    *,
+    revision: int,
+    binding: str,
+    reviewed_fields: object | None = None,
 ) -> dict[str, Any]:
     _local_only()
     with engine.begin() as conn:
         draft = _read(conn, draft_id, lock=True)
-        _current(draft, revision, binding)
+        _current(draft, revision, binding, reviewed_fields)
         _validated(draft)
         _verify_source(conn, draft)
         conn.execute(
@@ -277,12 +298,17 @@ def confirm_draft(
 
 
 def intake_draft(
-    engine: Engine, draft_id: str, *, revision: int, binding: str
+    engine: Engine,
+    draft_id: str,
+    *,
+    revision: int,
+    binding: str,
+    reviewed_fields: object | None = None,
 ) -> dict[str, object]:
     _local_only()
     with engine.begin() as conn:
         draft = _read(conn, draft_id, lock=True)
-        _current(draft, revision, binding)
+        _current(draft, revision, binding, reviewed_fields)
         if not draft["confirmed"]:
             raise PDFConflict("Explicit confirmation is required before PDF intake")
         fields = _validated(draft)

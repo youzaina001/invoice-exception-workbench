@@ -20,6 +20,7 @@
 {% if rows %}
 <form action="/pdf-drafts/{{ draft.id }}/edit" method="post">
 <input type="hidden" name="revision" value="{{ draft.revision }}">
+<input type="hidden" name="binding" value="{{ draft.binding }}">
 {% for row in rows %}
 <p><label for="{{ row.name }}">{{ row.label }}</label>
 <input id="{{ row.name }}" name="{{ row.name }}" value="{{ row.value }}">
@@ -31,19 +32,11 @@
 </p>
 {% endfor %}
 <button type="submit">Save reviewed fields</button>
-</form>
-<form action="/pdf-drafts/{{ draft.id }}/confirm" method="post">
-<input type="hidden" name="revision" value="{{ draft.revision }}">
-<input type="hidden" name="binding" value="{{ draft.binding }}">
-<button type="submit">Confirm reviewed PDF</button>
-</form>
-{% endif %}
+<button type="submit" formaction="/pdf-drafts/{{ draft.id }}/confirm">Confirm reviewed PDF</button>
 {% if draft.confirmed %}
 <p role="status">This source and reviewed revision are confirmed.</p>
-<form action="/pdf-drafts/{{ draft.id }}/intake" method="post">
-<input type="hidden" name="revision" value="{{ draft.revision }}">
-<input type="hidden" name="binding" value="{{ draft.binding }}">
-<button type="submit">Submit confirmed PDF</button>
+<button type="submit" formaction="/pdf-drafts/{{ draft.id }}/intake">Submit confirmed PDF</button>
+{% endif %}
 </form>
 {% endif %}
 <h3>Replace source</h3>

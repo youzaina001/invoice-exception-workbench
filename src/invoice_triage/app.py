@@ -459,6 +459,11 @@ def create_app(
                 draft_id,
                 revision=_pdf_revision(payload),
                 binding=_pdf_binding(payload),
+                reviewed_fields=(
+                    payload.get("fields")
+                    if "application/json" in request.headers.get("content-type", "")
+                    else _pdf_form_fields(payload)
+                ),
             )
         except (ValueError, LookupError) as exc:
             return _pdf_error(request, exc)
@@ -474,6 +479,11 @@ def create_app(
                 draft_id,
                 revision=_pdf_revision(payload),
                 binding=_pdf_binding(payload),
+                reviewed_fields=(
+                    payload.get("fields")
+                    if "application/json" in request.headers.get("content-type", "")
+                    else _pdf_form_fields(payload)
+                ),
             )
         except (ValueError, LookupError) as exc:
             return _pdf_error(request, exc)

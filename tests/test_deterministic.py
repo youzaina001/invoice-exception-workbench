@@ -60,8 +60,13 @@ def test_zero_total_ignores_subtotal_and_preserves_exact_page_offsets() -> None:
 @pytest.mark.parametrize(
     "label", ["Invoice ID", "Invoice-ID", "Invoice number", "Invoice No.", "Invoice #"]
 )
-def test_identifier_labels_preserve_case_and_leading_zeroes(label: str) -> None:
-    assert extract(f"{label}: Inv-0001\n").fields.invoice_id.value == "Inv-0001"
+@pytest.mark.parametrize("separator", [": ", " ", "\t"])
+def test_identifier_labels_preserve_case_and_leading_zeroes(
+    label: str, separator: str
+) -> None:
+    assert (
+        extract(f"{label}{separator}Inv-0001\n").fields.invoice_id.value == "Inv-0001"
+    )
 
 
 def test_absent_fields_have_no_fabricated_evidence_or_prose_currency() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import expect, sync_playwright
 from test_browser_journey import live_server as live_server
 from test_browser_journey import session_key as session_key
@@ -80,5 +81,72 @@ def test_pdf_review_confirmation_and_fresh_check_in_browser(live_server: str) ->
                 page.screenshot(
                     path=str(Path(capture) / "pdf-passed.png"), full_page=True
                 )
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("action", ["confirm", "intake"])
+def test_unsaved_visible_fields_refuse_confirmation_and_intake(
+    live_server: str, action: str
+) -> None:
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            page = browser.new_page(java_script_enabled=False)
+            page.goto(live_server)
+            page.get_by_label("PDF file", exact=True).set_input_files(
+                {
+                    "name": "unsaved.pdf",
+                    "mimeType": "application/pdf",
+                    "buffer": make_pdf([INVOICE.replace("0.00", "12.34")]),
+                }
+            )
+            page.get_by_role("button", name="Review PDF", exact=True).click()
+            draft_url = page.url
+            if action == "intake":
+                page.get_by_role("button", name="Confirm reviewed PDF").click()
+            saved = page.request.get(
+                draft_url, headers={"Accept": "application/json"}
+            ).json()
+            page.get_by_label("Amount (decimal, for example 12.34)", exact=True).fill(
+                "99.99"
+            )
+            button = (
+                "Confirm reviewed PDF"
+                if action == "confirm"
+                else "Submit confirmed PDF"
+            )
+            with page.expect_response(
+                lambda response: response.url == f"{draft_url}/{action}"
+            ) as refused:
+                page.get_by_role("button", name=button).click()
+            assert refused.value.status == 409
+            expect(page.get_by_role("alert")).to_contain_text("Save reviewed fields")
+            assert (
+                page.request.get(
+                    draft_url, headers={"Accept": "application/json"}
+                ).json()
+                == saved
+            )
+            assert (
+                page.request.get(
+                    live_server, headers={"Accept": "application/json"}
+                ).json()["submissions"]
+                == []
+            )
+
+            page.goto(draft_url)
+            page.get_by_label("Amount (decimal, for example 12.34)", exact=True).fill(
+                "99.99"
+            )
+            page.get_by_role("button", name="Save reviewed fields").click()
+            page.get_by_role("button", name="Confirm reviewed PDF").click()
+            saved = page.request.get(
+                draft_url, headers={"Accept": "application/json"}
+            ).json()
+            assert saved["fields"]["amount_minor"]["value"] == 9999
+            page.get_by_role("button", name="Submit confirmed PDF").click()
+            page.get_by_role("button", name="Run checks on current submission").click()
+            expect(page.get_by_text("Last run", exact=False)).to_contain_text("pass")
         finally:
             browser.close()

@@ -390,3 +390,49 @@ def test_pdf_provenance_failure_rolls_back_submission_and_staging(
         engine.dispose()
     action(client, draft, "intake")
     assert len(overview(client)["submissions"]) == 1
+
+
+@pytest.mark.parametrize("name", ["confirm", "intake"])
+def test_visible_fields_cannot_make_a_refused_source_reviewable(
+    client: TestClient, name: str
+) -> None:
+    fields = upload(client)["fields"]
+    for field in fields.values():
+        field["evidence"] = []
+    refused = upload(client, b"not a PDF")
+    response = client.post(
+        f"/pdf-drafts/{refused['id']}/{name}",
+        headers=HEADERS,
+        json={**token(refused), "fields": fields},
+    )
+    assert response.status_code == 400
+    assert overview(client)["submissions"] == []
+
+
+@pytest.mark.parametrize(
+    "label", ["Invoice ID", "Invoice-ID", "Invoice number", "Invoice no.", "Invoice #"]
+)
+@pytest.mark.parametrize("separator", [": ", " ", "\t"])
+def test_multiple_invoice_ids_are_refused_before_review_and_intake(
+    client: TestClient, label: str, separator: str
+) -> None:
+    source = make_pdf(
+        [
+            INVOICE.replace("Invoice ID: PDF-001", f"{label}{separator}{ref}")
+            for ref in ("PDF-A", "PDF-B")
+        ]
+    )
+    draft = upload(client, source)
+    assert draft["raw"]["status"] == "failure"
+    assert draft["raw"]["code"] == "multiple_invoices"
+    assert draft["fields"] is None
+    response = client.post(
+        f"/pdf-drafts/{draft['id']}/edit",
+        headers=HEADERS,
+        json={"revision": draft["revision"], "fields": {}},
+    )
+    assert response.status_code == 400
+    action(client, draft, "confirm", status=400)
+    action(client, draft, "intake", status=409)
+    assert client.get(f"/pdf-drafts/{draft['id']}/source").content == source
+    assert overview(client)["submissions"] == []

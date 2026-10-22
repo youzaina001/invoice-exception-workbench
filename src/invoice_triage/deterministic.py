@@ -6,21 +6,23 @@ import re
 from datetime import date
 
 from invoice_triage.extraction import Failure, Span, Success, validate_result
-from invoice_triage.pdf_text import PDFText
+from invoice_triage.pdf_text import INVOICE_ID, PDFText
 
 LABELS = {
-    "invoice_id": r"invoice(?:[ \t-]+(?:id|number|no\.?)|[ \t]+#)",
     "supplier_id": r"supplier[ \t-]+id",
     "invoice_date": r"(?:invoice[ \t]+)?date",
     "currency": r"currency",
     "amount_minor": r"(?:invoice[ \t]+total|grand[ \t]+total|amount[ \t]+due|total)",
 }
 RULES = {
-    name: re.compile(
-        rf"^[ \t]*{label}[ \t]*(?::[ \t]*|[ \t]+)(?P<value>.*?)[ \t]*$",
-        re.IGNORECASE,
-    )
-    for name, label in LABELS.items()
+    "invoice_id": INVOICE_ID,
+    **{
+        name: re.compile(
+            rf"^[ \t]*{label}[ \t]*(?::[ \t]*|[ \t]+)(?P<value>.*?)[ \t]*$",
+            re.IGNORECASE,
+        )
+        for name, label in LABELS.items()
+    },
 }
 CURRENCY_SUFFIX = re.compile(r"(?P<currency>[A-Za-z]{3}|€|\$)$")
 
