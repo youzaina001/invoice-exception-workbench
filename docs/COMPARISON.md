@@ -1,5 +1,7 @@
 # Saved extraction and confirmed workflow
 
+[Documentation](README.md) · [Project README](../README.md)
+
 Invoice Triage compares raw fields separately from what actually entered its
 confirmed workflow. Synthetic development examples are **authored stubs**. Their
 8/13 and 11/13 raw counts are scoring examples, not observed model performance.
@@ -7,8 +9,9 @@ The ten-document independently curated layout, exposure receipt, eligible-accoun
 billing proof and actual live comparison remain incomplete. No real invoice data,
 provider request or model credential is needed for offline replay.
 
-Run the single `invoice_triage.workflow_replay` command in the README after
-`make setup CORE=/path/to/airflow-dq-agent`. It verifies the complete artifact
+Run the `invoice_triage.workflow_replay` command in
+[Experiments](experiments.md#finite-model-experiment-offline-first) after
+[local setup](local-development.md). It verifies the complete artifact
 inventory, canonical PDF text, frozen scorer and workflow code before starting an
 isolated PostgreSQL cluster. Every arm/document gets a fresh database. It never
 connects to or resets the application's database. JSON and Markdown contain the
