@@ -17,7 +17,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx", "ruff", "mypy", "playwright"]
+dev = ["pytest", "httpx", "ruff", "mypy", "playwright", "google-genai==2.32.0"]
+model = ["google-genai==2.32.0"]
 
 [build-system]
 requires = ["hatchling"]
