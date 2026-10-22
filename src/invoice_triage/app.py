@@ -13,8 +13,11 @@ from fastapi import FastAPI, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.engine import Engine
+from starlette.datastructures import UploadFile as FormUploadFile
 
+from invoice_triage import pdf_intake
 from invoice_triage.auth import verified_reviewer
+from invoice_triage.extraction import Fields
 from invoice_triage.request_scope import (
     activate_connection_scope,
     bind_scope,
@@ -36,6 +39,7 @@ from invoice_triage.services import (
     ingest_submission,
     list_demo_attempts,
     list_overview,
+    parse_amount_minor,
     read_demo_attempt,
     resolve_case,
     run_current_checks,
@@ -99,6 +103,93 @@ def _engines(app: FastAPI) -> tuple[Engine, str, Engine]:
     if not settings.intake_dsn or not settings.read_dsn or not settings.audit_dsn:
         raise RuntimeError("intake, read, and audit DSNs must all be configured")
     return app.state.intake_engine, settings.read_dsn, app.state.audit_engine
+
+
+def _pdf_render(request: Request, draft: dict[str, Any], status: int = 200) -> Response:
+    if request.method == "POST" and not wants_json(request):
+        return RedirectResponse(f"/pdf-drafts/{draft['id']}", status_code=303)
+    rows = []
+    labels = {
+        "invoice_id": "Invoice ID",
+        "supplier_id": "Supplier ID",
+        "invoice_date": "Invoice date",
+        "currency": "Currency",
+        "amount_minor": "Amount (decimal, for example 12.34)",
+    }
+    for name, field in (draft["fields"] or {}).items():
+        value = field["value"]
+        if name == "amount_minor" and value is not None:
+            value = f"{value // 100}.{value % 100:02d}"
+        rows.append(
+            {
+                "name": name,
+                "label": labels[name],
+                "state": field["state"],
+                "value": value if value is not None else "",
+                "evidence": [
+                    {
+                        "page": span["page"],
+                        "text": draft["pages"][span["page"] - 1][
+                            span["start"] : span["end"]
+                        ],
+                    }
+                    for span in draft["raw"]["fields"][name]["evidence"]
+                ],
+            }
+        )
+    return _render(
+        request, "pdf_review.html", {"draft": draft, "rows": rows}, draft, status
+    )
+
+
+def _pdf_error(request: Request, exc: ValueError | LookupError) -> Response:
+    status = (
+        409
+        if isinstance(exc, pdf_intake.PDFConflict)
+        else 404
+        if isinstance(exc, LookupError)
+        else 400
+    )
+    return _error(request, str(exc), status)
+
+
+async def _pdf_payload(request: Request) -> dict[str, Any]:
+    if "application/json" in request.headers.get("content-type", ""):
+        value = await request.json()
+        if not isinstance(value, dict):
+            raise ValueError("Expected a review object")
+        return cast(dict[str, Any], value)
+    return dict(await request.form())
+
+
+def _pdf_revision(payload: dict[str, Any]) -> int:
+    value = payload.get("revision")
+    if isinstance(value, str) and value.lstrip("-").isdigit():
+        value = int(value)
+    if type(value) is not int:
+        raise ValueError("A reviewed revision is required")
+    return value
+
+
+def _pdf_binding(payload: dict[str, Any]) -> str:
+    binding = payload.get("binding")
+    if not isinstance(binding, str) or len(binding) > 64:
+        raise ValueError("A source and revision binding is required")
+    return binding
+
+
+def _pdf_form_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    for name in Fields.model_fields:
+        state = payload.get(f"{name}_state")
+        value = payload.get(name)
+        if not isinstance(value, str):
+            raise ValueError("Every reviewed field is required")
+        parsed: str | int | None = value.strip() or None
+        if name == "amount_minor" and parsed is not None:
+            parsed = parse_amount_minor(str(parsed), filename="Reviewed PDF")
+        fields[name] = {"state": state, "value": parsed, "evidence": []}
+    return fields
 
 
 def _reviewer_id(request: Request) -> str | None:
@@ -202,6 +293,11 @@ def create_app(
     async def _hosted_scope(request: Request, call_next: Any) -> Response:
         # Bind here, not in the endpoint thread: that thread receives a copy.
         settings: Settings = request.app.state.settings
+        if settings.hosted and (
+            request.url.path == "/pdf-drafts"
+            or request.url.path.startswith("/pdf-drafts/")
+        ):
+            return _error(request, "PDF review is available locally only", 403)
         reviewer = authenticate(request) if settings.hosted else None
         request.state.reviewer = reviewer
         tokens = bind_scope(hosted=settings.hosted, reviewer=reviewer)
@@ -274,6 +370,116 @@ def create_app(
             {"overview": payload, "read_only": True},
             cast(dict[str, Any], payload),
         )
+
+    @app.post("/pdf-drafts")
+    def upload_pdf(request: Request, file: UploadFile) -> Response:
+        intake, _, _ = _engines(request.app)
+        data = file.file.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            return _error(request, "PDF exceeds the 5 MiB limit", 413)
+        try:
+            draft = pdf_intake.create_draft(
+                intake, filename=file.filename or "upload.pdf", data=data
+            )
+        except ValueError as exc:
+            return _pdf_error(request, exc)
+        if wants_json(request):
+            return _pdf_render(request, draft, 201)
+        return RedirectResponse(f"/pdf-drafts/{draft['id']}", status_code=303)
+
+    @app.get("/pdf-drafts/{draft_id}")
+    def view_pdf(request: Request, draft_id: str) -> Response:
+        intake, _, _ = _engines(request.app)
+        try:
+            return _pdf_render(request, pdf_intake.read_draft(intake, draft_id))
+        except LookupError as exc:
+            return _pdf_error(request, exc)
+
+    @app.get("/pdf-drafts/{draft_id}/source")
+    def pdf_source(request: Request, draft_id: str) -> Response:
+        intake, _, _ = _engines(request.app)
+        try:
+            data = pdf_intake.read_source(intake, draft_id)
+        except LookupError as exc:
+            return _pdf_error(request, exc)
+        return Response(
+            data,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": 'attachment; filename="source.pdf"',
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox",
+            },
+        )
+
+    @app.post("/pdf-drafts/{draft_id}/edit")
+    async def edit_pdf(request: Request, draft_id: str) -> Response:
+        intake, _, _ = _engines(request.app)
+        try:
+            payload = await _pdf_payload(request)
+            fields = (
+                payload["fields"] if "fields" in payload else _pdf_form_fields(payload)
+            )
+            draft = pdf_intake.edit_draft(
+                intake, draft_id, revision=_pdf_revision(payload), fields=fields
+            )
+        except (ValueError, LookupError) as exc:
+            return _pdf_error(request, exc)
+        return _pdf_render(request, draft)
+
+    @app.post("/pdf-drafts/{draft_id}/source")
+    async def replace_pdf_source(request: Request, draft_id: str) -> Response:
+        intake, _, _ = _engines(request.app)
+        try:
+            payload = await _pdf_payload(request)
+            file = payload.get("file")
+            if not isinstance(file, FormUploadFile):
+                raise ValueError("A replacement PDF is required")
+            data = file.file.read(MAX_UPLOAD_BYTES + 1)
+            if len(data) > MAX_UPLOAD_BYTES:
+                return _error(request, "PDF exceeds the 5 MiB limit", 413)
+            draft = pdf_intake.replace_source(
+                intake,
+                draft_id,
+                revision=_pdf_revision(payload),
+                filename=file.filename or "upload.pdf",
+                data=data,
+            )
+        except (ValueError, LookupError) as exc:
+            return _pdf_error(request, exc)
+        return _pdf_render(request, draft)
+
+    @app.post("/pdf-drafts/{draft_id}/confirm")
+    async def confirm_pdf(request: Request, draft_id: str) -> Response:
+        intake, _, _ = _engines(request.app)
+        try:
+            payload = await _pdf_payload(request)
+            draft = pdf_intake.confirm_draft(
+                intake,
+                draft_id,
+                revision=_pdf_revision(payload),
+                binding=_pdf_binding(payload),
+            )
+        except (ValueError, LookupError) as exc:
+            return _pdf_error(request, exc)
+        return _pdf_render(request, draft)
+
+    @app.post("/pdf-drafts/{draft_id}/intake")
+    async def intake_pdf(request: Request, draft_id: str) -> Response:
+        intake, _, _ = _engines(request.app)
+        try:
+            payload = await _pdf_payload(request)
+            submission = pdf_intake.intake_draft(
+                intake,
+                draft_id,
+                revision=_pdf_revision(payload),
+                binding=_pdf_binding(payload),
+            )
+        except (ValueError, LookupError) as exc:
+            return _pdf_error(request, exc)
+        if wants_json(request):
+            return JSONResponse(submission)
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/ingest")
     def ingest(request: Request, file: UploadFile) -> Response:

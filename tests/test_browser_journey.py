@@ -99,7 +99,7 @@ def test_operator_journey_in_browser(live_server: str) -> None:
                 "link", name="Return to submissions and run checks"
             ).click()
 
-            page.locator('input[type="file"]').set_input_files(
+            page.locator('form[action="/ingest"] input[type="file"]').set_input_files(
                 str(FIXTURES / "missing_amount.csv")
             )
             page.get_by_role("button", name="Ingest").click()
@@ -113,7 +113,7 @@ def test_operator_journey_in_browser(live_server: str) -> None:
             ).to_be_visible()
 
             page.goto(live_server)
-            page.locator('input[type="file"]').set_input_files(
+            page.locator('form[action="/ingest"] input[type="file"]').set_input_files(
                 str(FIXTURES / "corrected_amount.csv")
             )
             page.get_by_role("button", name="Ingest").click()
@@ -126,7 +126,7 @@ def test_operator_journey_in_browser(live_server: str) -> None:
             expect(page.get_by_role("button", name="Resolve case")).to_be_hidden()
 
             page.goto(live_server)
-            page.locator('input[type="file"]').set_input_files(
+            page.locator('form[action="/ingest"] input[type="file"]').set_input_files(
                 str(FIXTURES / "corrected_amount.csv")
             )
             page.get_by_role("button", name="Ingest").click()
@@ -166,7 +166,7 @@ def test_hosted_attempt_history_in_browser(live_server: str, session_key: Any) -
             )
             page = context.new_page()
             page.goto(live_server)
-            page.locator('input[type="file"]').set_input_files(
+            page.locator('form[action="/ingest"] input[type="file"]').set_input_files(
                 str(FIXTURES / "missing_amount.csv")
             )
             page.get_by_role("button", name="Ingest").click()
@@ -174,7 +174,7 @@ def test_hosted_attempt_history_in_browser(live_server: str, session_key: Any) -
             page.get_by_role("link", name="Current Demo Attempt").click()
             page.get_by_role("button", name="Start fresh", exact=True).click()
             expect(page.get_by_text("missing_amount.csv", exact=True)).to_be_hidden()
-            page.locator('input[type="file"]').set_input_files(
+            page.locator('form[action="/ingest"] input[type="file"]').set_input_files(
                 {"name": "invalid.csv", "mimeType": "text/csv", "buffer": b"bad,csv\n"}
             )
             page.get_by_role("button", name="Ingest", exact=True).click()

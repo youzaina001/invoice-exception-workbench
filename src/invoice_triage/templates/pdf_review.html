@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %} — Review PDF{% endblock %}
+{% block body %}
+<p><a href="/">Return to submissions and run checks</a></p>
+<h2>Review PDF: {{ draft.filename }}</h2>
+<p>Review the source and all five fields before confirming. Confirmation does not run checks or approve payment.</p>
+{% if draft.submitted_id %}<p role="status">This reviewed version was submitted. Run fresh checks from the submissions page.</p>{% endif %}
+<div class="pdf-review">
+<section aria-labelledby="source-title">
+<h3 id="source-title">Original source</h3>
+<a href="/pdf-drafts/{{ draft.id }}/source" download>Download original PDF</a>
+{% for page in draft.pages %}<h4>Page {{ loop.index }}</h4><pre>{{ page }}</pre>{% endfor %}
+{% if draft.raw.status == 'failure' %}<p role="alert">PDF refused: {{ draft.raw.code }}. Replace the source to continue.</p>{% endif %}
+<details><summary>Original extraction result and evidence</summary><pre>{{ draft.raw | tojson(indent=2) }}</pre></details>
+<details><summary>Source identity</summary><p>{{ draft.source_hash }}</p></details>
+</section>
+<section aria-labelledby="fields-title">
+<h3 id="fields-title">Reviewed fields</h3>
+<p>Revision {{ draft.revision }}. An edit or replacement source requires a new confirmation. Only definite fields can be submitted in this demonstration.</p>
+{% if rows %}
+<form action="/pdf-drafts/{{ draft.id }}/edit" method="post">
+<input type="hidden" name="revision" value="{{ draft.revision }}">
+{% for row in rows %}
+<p><label for="{{ row.name }}">{{ row.label }}</label>
+<input id="{{ row.name }}" name="{{ row.name }}" value="{{ row.value }}">
+<label for="{{ row.name }}-state">{{ row.label }} state</label>
+<select id="{{ row.name }}-state" name="{{ row.name }}_state">
+{% for state in ['value', 'missing', 'ambiguous'] %}<option value="{{ state }}"{% if state == row.state %} selected{% endif %}>{{ 'Definite' if state == 'value' else state | capitalize }}</option>{% endfor %}
+</select>
+{% for evidence in row.evidence %}<small>Original evidence, page {{ evidence.page }}: <q>{{ evidence.text }}</q></small>{% else %}<small>No extraction evidence available.</small>{% endfor %}
+</p>
+{% endfor %}
+<button type="submit">Save reviewed fields</button>
+</form>
+<form action="/pdf-drafts/{{ draft.id }}/confirm" method="post">
+<input type="hidden" name="revision" value="{{ draft.revision }}">
+<input type="hidden" name="binding" value="{{ draft.binding }}">
+<button type="submit">Confirm reviewed PDF</button>
+</form>
+{% endif %}
+{% if draft.confirmed %}
+<p role="status">This source and reviewed revision are confirmed.</p>
+<form action="/pdf-drafts/{{ draft.id }}/intake" method="post">
+<input type="hidden" name="revision" value="{{ draft.revision }}">
+<input type="hidden" name="binding" value="{{ draft.binding }}">
+<button type="submit">Submit confirmed PDF</button>
+</form>
+{% endif %}
+<h3>Replace source</h3>
+<form action="/pdf-drafts/{{ draft.id }}/source" method="post" enctype="multipart/form-data">
+<input type="hidden" name="revision" value="{{ draft.revision }}">
+<label for="replacement-pdf">Replacement PDF</label>
+<input id="replacement-pdf" type="file" name="file" accept="application/pdf,.pdf" required>
+<button type="submit">Replace PDF source</button>
+</form>
+</section>
+</div>
+{% endblock %}

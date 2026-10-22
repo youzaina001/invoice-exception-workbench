@@ -107,6 +107,64 @@ ALTER TABLE wb.case_verdicts
 # One current staging row per Demo Attempt, and the same invoice reference may
 # exist in another attempt. Local rows leave attempt_id null and keep the
 # historical one-row-per-reference rule.
+LOCAL_PDF_DDL = """
+CREATE TABLE IF NOT EXISTS wb.pdf_sources (
+    id TEXT PRIMARY KEY,
+    source_hash TEXT NOT NULL UNIQUE,
+    data BYTEA NOT NULL,
+    filename TEXT NOT NULL,
+    pages JSONB NOT NULL,
+    raw JSONB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS wb.pdf_drafts (
+    id TEXT PRIMARY KEY,
+    owner_context TEXT NOT NULL CHECK (owner_context = 'local'),
+    revision INTEGER NOT NULL CHECK (revision > 0)
+);
+CREATE TABLE IF NOT EXISTS wb.pdf_revisions (
+    draft_id TEXT NOT NULL REFERENCES wb.pdf_drafts(id),
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    source_id TEXT NOT NULL REFERENCES wb.pdf_sources(id),
+    fields JSONB,
+    binding TEXT NOT NULL,
+    PRIMARY KEY (draft_id, revision)
+);
+CREATE TABLE IF NOT EXISTS wb.pdf_confirmations (
+    draft_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    binding TEXT NOT NULL,
+    confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (draft_id, revision),
+    FOREIGN KEY (draft_id, revision)
+        REFERENCES wb.pdf_revisions(draft_id, revision)
+);
+CREATE TABLE IF NOT EXISTS wb.pdf_intakes (
+    draft_id TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    submission_id TEXT NOT NULL REFERENCES wb.submissions(id),
+    PRIMARY KEY (draft_id, revision),
+    FOREIGN KEY (draft_id, revision)
+        REFERENCES wb.pdf_confirmations(draft_id, revision)
+);
+DO $$
+DECLARE target text;
+BEGIN
+    FOREACH target IN ARRAY ARRAY[
+        'pdf_sources', 'pdf_drafts', 'pdf_revisions',
+        'pdf_confirmations', 'pdf_intakes'
+    ] LOOP
+        EXECUTE format('ALTER TABLE wb.%I ENABLE ROW LEVEL SECURITY', target);
+        EXECUTE format('ALTER TABLE wb.%I FORCE ROW LEVEL SECURITY', target);
+        EXECUTE format('DROP POLICY IF EXISTS local_pdf ON wb.%I', target);
+        EXECUTE format(
+            'CREATE POLICY local_pdf ON wb.%I USING ('
+            'current_setting(''app.hosted'', true) IS DISTINCT FROM ''true'')',
+            target
+        );
+    END LOOP;
+END $$;
+"""
+
 SCOPED_DDL = """
 ALTER TABLE wb.submissions
     DROP CONSTRAINT IF EXISTS submissions_invoice_ref_version_key;
@@ -353,6 +411,7 @@ def setup_database(admin_dsn: str) -> IntakeCredentials:
     with make_engine(intake_dsn).begin() as connection:
         connection.execute(text(TABLES_DDL))
         connection.execute(text(SCOPED_DDL))
+        connection.execute(text(LOCAL_PDF_DDL))
     with admin.begin() as connection:
         connection.execute(text(AUDIT_SCOPE_DDL))
     return IntakeCredentials(intake_dsn=intake_dsn)

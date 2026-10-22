@@ -22,6 +22,15 @@
 {% endif %}{% endfor %}</ul>
 {% endif %}{% endif %}
 {% if not read_only %}
+{% if not request.app.state.settings.hosted %}
+<h2>Review supplier PDF</h2>
+<p>Upload one digital-text invoice, review its source and fields, then explicitly confirm before submission. Maximum 5 MiB and eight pages; scans and encrypted PDFs are refused.</p>
+<form action="/pdf-drafts" method="post" enctype="multipart/form-data">
+<label for="pdf-file">PDF file</label>
+<input id="pdf-file" type="file" name="file" accept="application/pdf,.pdf" required>
+<button type="submit">Review PDF</button>
+</form>
+{% endif %}
 <h2>Ingest supplier CSV</h2>
 <form action="/ingest" method="post" enctype="multipart/form-data">
 <input type="file" name="file" accept=".csv" required>

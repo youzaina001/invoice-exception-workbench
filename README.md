@@ -21,7 +21,8 @@ uv pip install --python .venv/bin/python -e '.[dev]'
 Update imports from `ledgerlens` to `invoice_triage` and launch commands to
 `invoice_triage.app:app`. The old import name is not provided. Database schemas,
 existing data, runtime settings and shared database lock identifiers keep their
-existing values; no database migration is needed. Historical verification
+existing values; renaming alone needs no database migration. The PDF review
+feature adds local tables through the existing setup path. Historical verification
 records retain the name and paths used when they were captured.
 
 ## Architecture
@@ -160,6 +161,51 @@ without adding history. Uploading an older duplicate leaves staging unchanged.
 The browser explains both outcomes, reports refused actions, and offers Resolve
 only when the current evidence permits it.
 
+## Local PDF review
+
+Use the setup above with the supported core revision. Restart the local `make db`
+process to apply the additive PDF tables, then restart `make run`. Do not reuse
+an application process with old generated role settings.
+
+1. Open `http://127.0.0.1:8101` and choose **PDF file** under **Review supplier PDF**.
+   Use [the synthetic valid PDF](fixtures/pdf_intake/valid.pdf) or
+   [the zero-amount PDF](fixtures/pdf_intake/zero.pdf).
+2. Select **Review PDF**. Inspect the original page text, download the original
+   file if needed, and compare each extracted field with its original page evidence.
+3. Edit any reviewed fields and select **Save reviewed fields**. The original
+   source and raw extraction stay unchanged. Amounts use decimal units, such as
+   `12.34`; money is stored and checked exactly as integer cents.
+4. Select **Confirm reviewed PDF**, then **Submit confirmed PDF**. Editing fields
+   or replacing the source invalidates the earlier confirmation. Intake rechecks
+   the source, revision, complete fields and local ownership in its transaction.
+5. Select **Run checks on current submission**. Both supplied PDFs pass the
+   installed core's completeness check without opening a case. A real zero stays
+   zero. Confirmation and a passing check do not approve payment.
+
+PDFs, original extraction and reviewed revisions are retained in local `wb.pdf_*`
+tables. Submissions and staging contain normalized invoice fields; PDF bytes and
+page text do not enter core Audit Lineage, XCom or private normalized case samples.
+Repeated source/value submissions reuse existing duplicate/restage behavior.
+A different replacement PDF retains its own source and submission history.
+
+This first application slice requires all five fields to be definite before
+confirmation. Missing or ambiguous fields stay reviewable but cannot enter
+staging; the missing-amount PDF correction/resolution journey is a later slice.
+Corrupt, encrypted, oversized, scanned and unsupported multi-invoice documents
+are refused, with bounded source/error evidence retained where input limits allow.
+
+Extraction uses anchored invoice/supplier ID, ISO calendar date, currency and
+final-total labels. Subtotals are not invoice totals. Distinct final totals stay
+ambiguous. Money supports unsigned decimal-dot notation with at most two fractional
+digits, without rounding or grouping separators. EUR/USD and the euro symbol are
+supported; a bare dollar symbol remains ambiguous. No model or OCR is called.
+Unfamiliar layouts can produce missing fields; arbitrary-layout detection is
+not established. All PDF routes refuse hosted requests before workspace writes;
+this feature does not enable hosted PDF retention.
+
+The verified development-only contract is the local intake prerequisite. Full
+ticket #2, the independent reserved corpus and held-out accuracy remain incomplete.
+
 ## Verification
 
 ```bash
@@ -187,9 +233,11 @@ makes no network calls. Edited artifacts or scoring require a new analysis.
 
 This is the development portion of ticket #2. The ten independently curated
 reserved documents and exposure separation have not been established; no
-held-out score is available. Field extractors, currency-symbol interpretation,
-subtotal/total selection, live model sends and application PDF intake are not
-implemented here. PDF conversion uses the pinned bounded adapter and never
+held-out score is available. The local deterministic extractor and review flow
+above are separate from the authored stub comparison; they establish no live-model
+performance result. Live model sends are not implemented. The package integration
+and Invoice-ID refusal correction create a new scorer identity while retaining
+the original PDF/gold/first-output artifacts. PDF conversion uses the pinned bounded adapter and never
 truncates. Multiple-invoice detection checks line-anchored invoice IDs throughout
 the document and repeated invoice sections within a page. Repeated same-ID
 headers across pages are treated as continuation; other document structures need
