@@ -5,7 +5,7 @@ from __future__ import annotations
 import jwt
 from fastapi import Request
 
-from ledgerlens.settings import Settings
+from invoice_triage.settings import Settings
 
 
 def verified_reviewer(request: Request) -> str | None:

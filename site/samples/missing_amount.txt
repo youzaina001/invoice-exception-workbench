@@ -1,0 +1,5 @@
+SYNTHETIC INVOICE
+Invoice ID: PDF-VALID-001
+Supplier ID: SUP-001
+Invoice date: 2026-10-23
+Currency: EUR

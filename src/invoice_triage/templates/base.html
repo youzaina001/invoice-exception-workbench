@@ -2,13 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>LedgerLens{% block title %}{% endblock %}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoice Triage{% block title %}{% endblock %}</title>
 <style>
 body { font-family: sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
-table { border-collapse: collapse; margin: 1rem 0; }
-th, td { border: 1px solid #999; padding: 0.3rem 0.8rem; text-align: left; }
+table { border-collapse: collapse; margin: 1rem 0; width: 100%; max-width: 100%; }
+th, td { border: 1px solid #999; padding: 0.3rem 0.8rem; text-align: left; overflow-wrap: anywhere; }
 .error { color: #a00; }
 .unknown { color: #777; }
+.pdf-review { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+.pdf-review section { min-width: 0; }
+.pdf-review pre, .pdf-review p { overflow-wrap: anywhere; white-space: pre-wrap; }
+.pdf-review input, .pdf-review select { display: block; max-width: 100%; margin-bottom: 0.5rem; }
+@media (max-width: 45rem) { .pdf-review { grid-template-columns: 1fr; } }
 </style>
 {% if request.app.state.settings.hosted and request.app.state.settings.clerk_publishable_key and request.app.state.settings.clerk_issuer %}
 <script defer crossorigin="anonymous"
@@ -38,7 +44,7 @@ async function loadClerk() {
 {% endif %}
 </head>
 <body>
-<h1>LedgerLens</h1>
+<h1>Invoice Triage</h1>
 {% block body %}{% endblock %}
 </body>
 </html>

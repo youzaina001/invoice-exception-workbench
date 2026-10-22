@@ -1,0 +1,61 @@
+{
+  "version": "1",
+  "status": "ok",
+  "fields": {
+    "invoice_id": {
+      "state": "value",
+      "value": "Inv-0002",
+      "evidence": [
+        {
+          "page": 1,
+          "start": 30,
+          "end": 38
+        }
+      ]
+    },
+    "supplier_id": {
+      "state": "value",
+      "value": "Sup-0042",
+      "evidence": [
+        {
+          "page": 1,
+          "start": 52,
+          "end": 60
+        }
+      ]
+    },
+    "invoice_date": {
+      "state": "value",
+      "value": "2026-10-18",
+      "evidence": [
+        {
+          "page": 1,
+          "start": 75,
+          "end": 85
+        }
+      ]
+    },
+    "currency": {
+      "state": "value",
+      "value": "USD",
+      "evidence": [
+        {
+          "page": 1,
+          "start": 96,
+          "end": 99
+        }
+      ]
+    },
+    "amount_minor": {
+      "state": "value",
+      "value": 12500,
+      "evidence": [
+        {
+          "page": 1,
+          "start": 115,
+          "end": 121
+        }
+      ]
+    }
+  }
+}

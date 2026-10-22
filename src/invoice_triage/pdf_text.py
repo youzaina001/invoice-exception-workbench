@@ -11,7 +11,7 @@ import subprocess
 import sys
 from typing import Any, Literal
 
-from ledgerlens.extraction import Failure, StrictModel
+from invoice_triage.extraction import Failure, StrictModel
 
 MAX_PDF_BYTES = 5 * 1024 * 1024
 MAX_PAGES = 8
@@ -20,6 +20,12 @@ MAX_TEXT_BYTES = 64 * 1024
 MEMORY_BYTES = 256 * 1024 * 1024
 CPU_SECONDS = 3
 WALL_SECONDS = 5
+INVOICE_ID = re.compile(
+    r"^[ \t]*invoice(?:[ \t-]+(?:id|number|no\.?)[ \t]*"
+    r"(?::[ \t]*|[ \t]+)|[ \t]+#[ \t]*:?[ \t]*)"
+    r"(?P<value>.*?)[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 ADAPTER: dict[str, Any] = {
     "pypdf": "6.21.1",
     "strict": True,
@@ -56,7 +62,7 @@ def read_pdf(data: bytes) -> PDFText | Failure:
         return refused("input_limit")
     try:
         child = subprocess.run(
-            [sys.executable, "-m", "ledgerlens.pdf_text"],
+            [sys.executable, "-m", "invoice_triage.pdf_text"],
             input=data,
             capture_output=True,
             timeout=WALL_SECONDS,
@@ -151,11 +157,9 @@ def worker() -> PDFText | Failure:
         tagged = "".join(f"[page {i}]\n{text}" for i, text in enumerate(pages, 1))
         if len(tagged.encode("utf-8")) > MAX_TEXT_BYTES:
             return refused("text_limit")
-        invoice_id = re.compile(
-            r"(?im)^[ \t]*invoice[ \t]+(?:id|number|no\.?|#)"
-            r"[ \t]*:[ \t]*([^\n]+)"
-        )
-        invoice_ids = {value.strip() for value in invoice_id.findall(tagged)}
+        invoice_ids = {
+            value.strip() for value in INVOICE_ID.findall(tagged) if value.strip()
+        }
         if len(invoice_ids) > 1:
             return refused("multiple_invoices")
         # shortcut: same-ID page headers imply continuation; widen with fixtures.
@@ -164,7 +168,7 @@ def worker() -> PDFText | Failure:
                 r"(?im)^[ \t]*(?:(?:synthetic|tax|commercial)[ \t]+)*invoice[ \t]*$",
                 page_text,
             )
-            if sum(bool(invoice_id.search(section)) for section in sections) > 1:
+            if sum(bool(INVOICE_ID.search(section)) for section in sections) > 1:
                 return refused("multiple_invoices")
         return PDFText(
             version="1",
