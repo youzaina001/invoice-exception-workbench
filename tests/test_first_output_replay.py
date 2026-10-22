@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +167,36 @@ def test_ten_first_outputs_replay_without_credentials_and_preserve_provenance(
         "extract/transport_failure": 1,
         "extract/uncertain_send": 1,
     }
+    state_bytes, seal_bytes = (
+        (root / "state.json").read_bytes(),
+        (root / "seal.json").read_bytes(),
+    )
+    for incorrect_total in ("0", "999999"):
+        state = json.loads(state_bytes)
+        state["planned_reservation_usd"] = incorrect_total
+        seal = json.loads(seal_bytes)
+        seal["state_sha256"] = model_runner.digest(model_runner.canonical(state))
+        (root / "state.json").write_text(json.dumps(state))
+        (root / "seal.json").write_text(json.dumps(seal))
+        for name in ("state.json", "seal.json"):
+            manifest["hashes"][name] = hashlib.sha256(
+                (root / name).read_bytes()
+            ).hexdigest()
+        path.write_text(json.dumps(manifest))
+        refused = subprocess.run(
+            [sys.executable, "-m", "invoice_triage.evaluation", "replay", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert refused.returncode == 2, refused.stdout
+        assert "reservation total" in refused.stderr
+    (root / "state.json").write_bytes(state_bytes)
+    (root / "seal.json").write_bytes(seal_bytes)
+    for name in ("state.json", "seal.json"):
+        manifest["hashes"][name] = hashlib.sha256(
+            (root / name).read_bytes()
+        ).hexdigest()
     altered = json.loads((root / "model.json").read_text())
     altered["opaque-7"] = gold["opaque-7"]
     (root / "model.json").write_text(json.dumps(altered))

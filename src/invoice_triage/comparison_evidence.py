@@ -61,7 +61,8 @@ def check_run(
         raise ValueError("saved allowance seal mismatch")
     plan = checked_plan(state["plan"])
     receipt = Eligibility.model_validate(state["receipt"])
-    planned_charge(plan, receipt)
+    if state["planned_reservation_usd"] != str(planned_charge(plan, receipt)):
+        raise ValueError("saved reservation total differs from frozen accounting")
     if (
         receipt.project != plan.project
         or receipt.location != plan.location
