@@ -25,10 +25,11 @@ def reset_db() -> None:
     """Runner acceptance needs no database or credentials."""
 
 
-def test_missing_allowance_refuses_without_creating_one() -> None:
+def test_missing_allowance_refuses_without_creating_one(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     result = subprocess.run(
         [sys.executable, "-m", "invoice_triage.model_runner", "audit"],
-        cwd=ROOT,
+        cwd=tmp_path,
         capture_output=True,
         text=True,
         check=False,

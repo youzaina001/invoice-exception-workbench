@@ -260,7 +260,8 @@ This is the development portion of ticket #2. The ten independently curated
 reserved documents and exposure separation have not been established; no
 held-out score is available. The local deterministic extractor and review flow
 above are separate from the authored stub comparison; they establish no live-model
-performance result. Live model sends are not implemented. The package integration
+performance result. The finite runner below is implemented; no live comparison
+has been run. The package integration
 and Invoice-ID refusal correction create a new scorer identity while retaining
 the original PDF/gold/first-output artifacts. PDF conversion uses the pinned bounded adapter and never
 truncates. Multiple-invoice detection checks line-anchored invoice IDs throughout
