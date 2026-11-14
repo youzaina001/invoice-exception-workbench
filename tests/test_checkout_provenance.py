@@ -172,3 +172,45 @@ def test_dev_pg_and_docs_exclude_legacy_runtime_keys() -> None:
         assert legacy_key not in dev_pg
     local_dev = (root / "docs/local-development.md").read_text(encoding="utf-8")
     assert "The generated `.env` may retain these" not in local_dev
+
+
+def test_pinned_core_and_static_report_match() -> None:
+    import hashlib
+    import json
+    import re
+
+    from invoice_triage.workflow_replay import PINNED_CORE, Plan, code_identity
+
+    root = Path(__file__).resolve().parents[1]
+    assert PINNED_CORE == "5d602428a93e5eee733b4ed1ffd06af4cbba250b"
+
+    workflow_yml = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert re.search(rf"^\s*ref:\s*{PINNED_CORE}\s*$", workflow_yml, re.MULTILINE)
+
+    manifest_path = root / "fixtures/extraction/development/manifest.json"
+    manifest_bytes = manifest_path.read_bytes()
+    plan_path = root / "fixtures/extraction/development/workflow.json"
+    plan_bytes = plan_path.read_bytes()
+    plan = Plan.model_validate(json.loads(plan_bytes))
+    assert plan.core_revision == PINNED_CORE
+    assert plan.code_sha256 == code_identity()
+    assert plan.manifest_sha256 == hashlib.sha256(manifest_bytes).hexdigest()
+
+    report_path = root / "site/evidence/saved-report.json"
+    report_bytes = report_path.read_bytes()
+    report = json.loads(report_bytes)
+    assert report["core"]["revision"] == PINNED_CORE
+    assert report["workflow_code_sha256"] == code_identity()
+    assert report["plan_sha256"] == hashlib.sha256(plan_bytes).hexdigest()
+
+    report_sha = hashlib.sha256(report_bytes).hexdigest()
+    report_html = (root / "site/report.html").read_text(encoding="utf-8")
+    assert f"Report SHA-256: <code>{report_sha}</code>" in report_html
+    assert f"Core: <code>{PINNED_CORE}</code>" in report_html
+
+    status_html = (root / "site/project-status.html").read_text(encoding="utf-8")
+    assert f"<code>{PINNED_CORE}</code>" in status_html
+    for doc_rel in ("docs/local-development.md", "docs/COMPARISON.md"):
+        doc_text = (root / doc_rel).read_text(encoding="utf-8")
+        assert PINNED_CORE in doc_text
+        assert "a1477241fa856df64687e998347e3ecca315619a" not in doc_text
