@@ -19,7 +19,7 @@ from invoice_triage.evaluation import load_bundle, load_json, read_artifact, rep
 from invoice_triage.extraction import Failure, StrictModel, validate_result
 
 POLICY = "confirm-unchanged-then-declared-source-replacement-v1"
-PINNED_CORE = "a1477241fa856df64687e998347e3ecca315619a"
+PINNED_CORE = "5d602428a93e5eee733b4ed1ffd06af4cbba250b"
 
 
 def sha(data: bytes) -> str:
@@ -48,7 +48,7 @@ class Plan(StrictModel):
     version: Literal["1"]
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     code_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    core_revision: Literal["a1477241fa856df64687e998347e3ecca315619a"]
+    core_revision: Literal["5d602428a93e5eee733b4ed1ffd06af4cbba250b"]
     policy: Literal["confirm-unchanged-then-declared-source-replacement-v1"]
     expected: dict[str, Literal["refused", "no_case", "open", "resolved"]]
     corrections: dict[str, Correction]

@@ -32,7 +32,7 @@ def test_replay_keeps_wrong_confirmed_clearance_and_failures_in_denominator(
         "version": "1",
         "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "code_sha256": code_identity(),
-        "core_revision": "a1477241fa856df64687e998347e3ecca315619a",
+        "core_revision": "5d602428a93e5eee733b4ed1ffd06af4cbba250b",
         "policy": "confirm-unchanged-then-declared-source-replacement-v1",
         "expected": {doc: "open"},
         "corrections": {},
@@ -107,7 +107,7 @@ def test_declared_replacement_can_only_resolve_the_actual_checked_case(
         "version": "1",
         "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "code_sha256": code_identity(),
-        "core_revision": "a1477241fa856df64687e998347e3ecca315619a",
+        "core_revision": "5d602428a93e5eee733b4ed1ffd06af4cbba250b",
         "policy": "confirm-unchanged-then-declared-source-replacement-v1",
         "expected": {doc: "resolved"},
         "corrections": {
