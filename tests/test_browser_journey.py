@@ -35,7 +35,6 @@ def live_server(
     log = work / "server.log"
     env = {
         **os.environ,
-        "WAREHOUSE_DSN": pg_dsns["read"],
         "INTAKE_DSN": pg_dsns["intake"],
         "READ_DSN": pg_dsns["read"],
         "AUDIT_DSN": pg_dsns["audit"],
