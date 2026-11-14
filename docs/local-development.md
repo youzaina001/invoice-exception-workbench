@@ -53,8 +53,8 @@ TRACES_DIR=traces
 ```
 
 No admin or apply DSN is required by the runtime. `WAREHOUSE_DSN`, `APP_HOST`,
-and `APP_PORT` are not workbench settings. The generated `.env` may retain these
-legacy keys; `make run` sets the bind address and port explicitly.
+and `APP_PORT` are not workbench settings; `make run` sets the bind address and
+port explicitly.
 
 Failure journey: upload `fixtures/missing_amount.csv`, run checks, open the
 case (failed completeness check, full row values, Unknown labels for absent

@@ -133,3 +133,42 @@ def test_wheel_core_does_not_claim_the_workbenchs_git_revision(tmp_path: Path) -
     assert result.returncode == 0, result.stdout + result.stderr
     assert marker.exists()
     assert "core_revision=unavailable" in result.stdout
+
+
+def test_static_walkthrough_does_not_claim_source_repository_is_private() -> None:
+    root = Path(__file__).resolve().parents[1]
+    forbidden = (
+        "private source repository",
+        "source repository is private",
+        "source repository remains private",
+    )
+    for rel in ("site/index.html", "site/walkthrough.html", "site/project-status.html"):
+        content = (root / rel).read_text(encoding="utf-8")
+        for phrase in forbidden:
+            assert phrase not in content, f"{rel} still contains {phrase!r}"
+    status_content = (root / "site/project-status.html").read_text(encoding="utf-8")
+    assert "describe its private source and evidence limits" in status_content
+
+
+def test_pyproject_dependencies_are_bounded_and_locked() -> None:
+    import tomllib
+
+    root = Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    deps = (
+        pyproject["project"]["dependencies"]
+        + pyproject["project"]["optional-dependencies"]["dev"]
+    )
+    for spec in deps:
+        assert any(op in spec for op in ("==", ">=", "<")), spec
+        assert not (">=" in spec and "<" not in spec), spec
+    assert (root / "uv.lock").is_file()
+
+
+def test_dev_pg_and_docs_exclude_legacy_runtime_keys() -> None:
+    root = Path(__file__).resolve().parents[1]
+    dev_pg = (root / "scripts/dev_pg.py").read_text(encoding="utf-8")
+    for legacy_key in ("WAREHOUSE_DSN=", "APP_HOST=", "APP_PORT="):
+        assert legacy_key not in dev_pg
+    local_dev = (root / "docs/local-development.md").read_text(encoding="utf-8")
+    assert "The generated `.env` may retain these" not in local_dev

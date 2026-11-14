@@ -4,20 +4,27 @@ version = "0.1.0"
 description = "Invoice Triage: operator workbench for incomplete supplier invoices"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi",
+    "fastapi>=0.115,<1",
     "PyJWT[crypto]>=2.10,<3",
-    "jinja2",
-    "uvicorn",
-    "psycopg[binary]",
-    "sqlalchemy",
-    "pydantic-settings",
+    "jinja2>=3.1,<4",
+    "uvicorn>=0.32,<1",
+    "psycopg[binary]>=3.2,<4",
+    "sqlalchemy>=2.0.36,<2.1",
+    "pydantic-settings>=2.6,<3",
     "pydantic>=2,<3",
     "pypdf==6.21.1",
     "pgserver==0.1.4",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx", "ruff", "mypy", "playwright", "google-genai==2.32.0"]
+dev = [
+    "pytest>=8.3,<10",
+    "httpx>=0.27,<1",
+    "ruff>=0.8,<1",
+    "mypy>=1.13,<3",
+    "playwright>=1.49,<2",
+    "google-genai==2.32.0",
+]
 model = ["google-genai==2.32.0"]
 
 [build-system]

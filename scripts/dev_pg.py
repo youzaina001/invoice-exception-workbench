@@ -32,12 +32,10 @@ def main() -> None:
         creds = provision_restricted_logins(admin_wh)
         intake = setup_database(admin_wh)
         (ROOT / ".env").write_text(
-            f"WAREHOUSE_DSN={creds.read_dsn}\n"
             f"INTAKE_DSN={intake.intake_dsn}\n"
             f"READ_DSN={creds.read_dsn}\n"
             f"AUDIT_DSN={creds.audit_dsn}\n"
-            "LLM_MODE=stub\nAPPLY_MODE=off\nTRACE_POSTGRES=true\nTRACES_DIR=traces\n"
-            "APP_HOST=127.0.0.1\nAPP_PORT=8101\n",
+            "LLM_MODE=stub\nAPPLY_MODE=off\nTRACE_POSTGRES=true\nTRACES_DIR=traces\n",
             encoding="utf-8",
         )
         (ROOT / ".env.setup").write_text(
