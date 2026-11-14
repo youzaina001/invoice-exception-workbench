@@ -19,7 +19,7 @@ def reset_db() -> None:
 def test_replay_keeps_wrong_confirmed_clearance_and_failures_in_denominator(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from invoice_triage.workflow_replay import code_identity, main
+    from invoice_triage.workflow_replay import PINNED_CORE, code_identity, main
 
     bundle, manifest, doc = single_document_bundle(tmp_path, "S02")
     # Labeled test fault: one saved arm guesses an amount on the missing-amount PDF.
@@ -32,7 +32,7 @@ def test_replay_keeps_wrong_confirmed_clearance_and_failures_in_denominator(
         "version": "1",
         "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "code_sha256": code_identity(),
-        "core_revision": "5d602428a93e5eee733b4ed1ffd06af4cbba250b",
+        "core_revision": PINNED_CORE,
         "policy": "confirm-unchanged-then-declared-source-replacement-v1",
         "expected": {doc: "open"},
         "corrections": {},
@@ -83,7 +83,7 @@ def test_declared_replacement_can_only_resolve_the_actual_checked_case(
 
     from invoice_triage.deterministic import extract_fields
     from invoice_triage.pdf_text import PDFText, read_pdf
-    from invoice_triage.workflow_replay import code_identity, main
+    from invoice_triage.workflow_replay import PINNED_CORE, code_identity, main
 
     bundle, manifest, doc = single_document_bundle(tmp_path, "S02")
     path = freeze_bundle(bundle, manifest)
@@ -107,7 +107,7 @@ def test_declared_replacement_can_only_resolve_the_actual_checked_case(
         "version": "1",
         "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "code_sha256": code_identity(),
-        "core_revision": "5d602428a93e5eee733b4ed1ffd06af4cbba250b",
+        "core_revision": PINNED_CORE,
         "policy": "confirm-unchanged-then-declared-source-replacement-v1",
         "expected": {doc: "resolved"},
         "corrections": {
