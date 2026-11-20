@@ -15,8 +15,14 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from invoice_triage.evaluation import load_bundle, load_json, read_artifact, replay
-from invoice_triage.extraction import Failure, StrictModel, validate_result
+from invoice_triage.evaluation import load_bundle, replay
+from invoice_triage.extraction import (
+    Failure,
+    StrictModel,
+    load_json,
+    read_artifact,
+    validate_result,
+)
 
 POLICY = "confirm-unchanged-then-declared-source-replacement-v1"
 PINNED_CORE = "5d602428a93e5eee733b4ed1ffd06af4cbba250b"

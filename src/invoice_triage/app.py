@@ -17,8 +17,7 @@ from starlette.datastructures import UploadFile as FormUploadFile
 
 from invoice_triage import pdf_intake
 from invoice_triage.auth import verified_reviewer
-from invoice_triage.evaluation import load_json
-from invoice_triage.extraction import Fields
+from invoice_triage.extraction import Fields, load_json
 from invoice_triage.request_scope import (
     activate_connection_scope,
     bind_scope,
