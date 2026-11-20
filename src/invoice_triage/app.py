@@ -8,43 +8,32 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
 
-from airflow_dq_agent.warehouse.db import make_engine
 from fastapi import FastAPI, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from starlette.datastructures import UploadFile as FormUploadFile
 
 from invoice_triage import pdf_intake
 from invoice_triage.auth import verified_reviewer
-from invoice_triage.evaluation import load_json
-from invoice_triage.extraction import Fields
-from invoice_triage.request_scope import (
-    activate_connection_scope,
-    bind_scope,
-    current_attempt,
-    install_scope,
-    reset_scope,
-    set_attempt,
-)
-from invoice_triage.resolution import refusal_guidance
-from invoice_triage.services import (
-    AttemptNotFoundError,
-    AttemptReadOnlyError,
+from invoice_triage.cases import (
     CaseNotFoundError,
-    CheckMissingError,
     NothingStagedError,
     StaleStagedError,
-    ensure_demo_workspace,
     get_case_detail,
-    ingest_submission,
-    list_demo_attempts,
-    list_overview,
-    parse_amount_minor,
-    read_demo_attempt,
     resolve_case,
     run_current_checks,
-    start_fresh_attempt,
+)
+from invoice_triage.governance import CheckMissingError, configure_governance
+from invoice_triage.intake import ingest_submission
+from invoice_triage.request_scope import (
+    AttemptNotFoundError,
+    AttemptReadOnlyError,
+    ExecutionScope,
+    install_scope,
+    read_workspace_view,
+    resolve_scope,
 )
 from invoice_triage.settings import Settings
 
@@ -78,18 +67,20 @@ def _error(request: Request, detail: str, status_code: int) -> Response:
 
 
 def _index_error(
-    request: Request, engine: Engine, detail: str, status_code: int
+    request: Request,
+    engine: Engine,
+    detail: str,
+    status_code: int,
+    *,
+    scope: ExecutionScope,
 ) -> Response:
-    attempt_id = current_attempt()
+    view = read_workspace_view(engine, scope=scope)
     return _render(
         request,
         "index.html",
         {
-            "overview": {
-                **list_overview(engine, attempt_id=attempt_id),
-                "attempt_id": attempt_id,
-            },
-            "attempts": list_demo_attempts(engine) if attempt_id else [],
+            "overview": view["overview"],
+            "attempts": view["attempts"],
             "error": detail,
             "last_run": None,
             "last_status": None,
@@ -109,43 +100,22 @@ def _engines(app: FastAPI) -> tuple[Engine, str, Engine]:
 def _pdf_render(request: Request, draft: dict[str, Any], status: int = 200) -> Response:
     if request.method == "POST" and not wants_json(request):
         return RedirectResponse(f"/pdf-drafts/{draft['id']}", status_code=303)
-    rows = []
-    labels = {
-        "invoice_id": "Invoice ID",
-        "supplier_id": "Supplier ID",
-        "invoice_date": "Invoice date",
-        "currency": "Currency",
-        "amount_minor": "Amount (decimal, for example 12.34)",
-    }
-    for name, field in (draft["fields"] or {}).items():
-        value = field["value"]
-        if name == "amount_minor" and value is not None:
-            value = f"{value // 100}.{value % 100:02d}"
-        rows.append(
-            {
-                "name": name,
-                "label": labels[name],
-                "state": field["state"],
-                "value": value if value is not None else "",
-                "evidence": [
-                    {
-                        "page": span["page"],
-                        "text": draft["pages"][span["page"] - 1][
-                            span["start"] : span["end"]
-                        ],
-                    }
-                    for span in draft["raw"]["fields"][name]["evidence"]
-                ],
-            }
-        )
     return _render(
-        request, "pdf_review.html", {"draft": draft, "rows": rows}, draft, status
+        request,
+        "pdf_review.html",
+        {"draft": draft, "rows": pdf_intake.review_rows(draft)},
+        draft,
+        status,
     )
 
 
-def _pdf_error(request: Request, exc: ValueError | LookupError) -> Response:
+def _pdf_error(
+    request: Request, exc: ValueError | LookupError | PermissionError
+) -> Response:
     status = (
-        409
+        403
+        if isinstance(exc, PermissionError)
+        else 409
         if isinstance(exc, pdf_intake.PDFConflict)
         else 404
         if isinstance(exc, LookupError)
@@ -154,47 +124,29 @@ def _pdf_error(request: Request, exc: ValueError | LookupError) -> Response:
     return _error(request, str(exc), status)
 
 
-async def _pdf_payload(request: Request) -> dict[str, Any]:
+async def _pdf_payload(request: Request) -> tuple[dict[str, Any], bool]:
     if "application/json" in request.headers.get("content-type", ""):
         value = await request.json()
         if not isinstance(value, dict):
             raise ValueError("Expected a review object")
-        return cast(dict[str, Any], value)
-    return dict(await request.form())
-
-
-def _pdf_revision(payload: dict[str, Any]) -> int:
-    value = payload.get("revision")
-    if isinstance(value, str) and value.lstrip("-").isdigit():
-        value = int(value)
-    if type(value) is not int:
-        raise ValueError("A reviewed revision is required")
-    return value
-
-
-def _pdf_binding(payload: dict[str, Any]) -> str:
-    binding = payload.get("binding")
-    if not isinstance(binding, str) or len(binding) > 64:
-        raise ValueError("A source and revision binding is required")
-    return binding
-
-
-def _pdf_form_fields(payload: dict[str, Any]) -> dict[str, Any]:
-    fields: dict[str, Any] = {}
-    for name in Fields.model_fields:
-        state = payload.get(f"{name}_state")
-        value = payload.get(name)
-        if not isinstance(value, str):
-            raise ValueError("Every reviewed field is required")
-        parsed: str | int | None = value.strip() or None
-        if name == "amount_minor" and parsed is not None:
-            parsed = parse_amount_minor(str(parsed), filename="Reviewed PDF")
-        fields[name] = {"state": state, "value": parsed, "evidence": []}
-    return fields
+        return cast(dict[str, Any], value), False
+    return dict(await request.form()), True
 
 
 def _reviewer_id(request: Request) -> str | None:
     return cast(str | None, getattr(request.state, "reviewer", None))
+
+
+def _pdf_scope(request: Request) -> ExecutionScope:
+    """Carry hosted mode into pdf_intake, which refuses it (local only).
+
+    The middleware path check misses prefixed paths (proxy or mount), so the
+    handlers must not fall back to a local scope on a hosted deployment.
+    """
+    settings: Settings = request.app.state.settings
+    if not settings.hosted:
+        return ExecutionScope.local()
+    return ExecutionScope(hosted=True, reviewer_id=_reviewer_id(request))
 
 
 def _unsigned_response(request: Request) -> Response | None:
@@ -217,40 +169,25 @@ def _named_attempt(request: Request) -> str | None:
     return named or None
 
 
-def _read_only_attempt(request: Request, current: str | None) -> Response | None:
-    """A named non-current Demo Attempt accepts reads and refuses writes."""
-    named = _named_attempt(request)
-    if named is None or current is None or named == current:
-        return None
-    payload = {"detail": "attempt-read-only", "reason": "attempt-read-only"}
-    if wants_json(request):
-        return JSONResponse(payload, status_code=409)
-    return _error(request, "attempt-read-only", 409)
-
-
-def _prepare_demo(request: Request) -> dict[str, str] | None:
-    """Open this Reviewer's Demo Workspace on the request's copied context."""
-    settings: Settings = request.app.state.settings
-    if not settings.hosted:
-        return None
-    reviewer = _reviewer_id(request)
-    if reviewer is None:
-        return None
-    intake, _, _ = _engines(request.app)
-    demo = ensure_demo_workspace(intake, reviewer)
-    set_attempt(demo["attempt_id"])
-    return demo
-
-
-def _prepare_mutation(request: Request) -> dict[str, str] | Response | None:
+def _request_scope(
+    request: Request, *, start_fresh: bool = False
+) -> ExecutionScope | Response:
     denied = _unsigned_response(request)
     if denied is not None:
         return denied
-    demo = _prepare_demo(request)
-    read_only = _read_only_attempt(
-        request, None if demo is None else demo["attempt_id"]
+    settings: Settings = request.app.state.settings
+    if not settings.hosted:
+        return ExecutionScope.local()
+    reviewer = _reviewer_id(request)
+    assert reviewer is not None
+    intake, _, _ = _engines(request.app)
+    return resolve_scope(
+        intake,
+        hosted=True,
+        reviewer_id=reviewer,
+        requested_attempt_id=_named_attempt(request),
+        start_fresh=start_fresh,
     )
-    return read_only if read_only is not None else demo
 
 
 @asynccontextmanager
@@ -268,15 +205,19 @@ def create_app(
     *,
     authenticate: Callable[[Request], str | None] = verified_reviewer,
 ) -> FastAPI:
-    activate_connection_scope()
+    configure_governance(scope_installer=install_scope)
     resolved = settings or Settings()
     app = FastAPI(title="Invoice Triage", lifespan=lifespan)
     app.state.settings = resolved
     app.state.intake_engine = (
-        make_engine(resolved.intake_dsn) if resolved.intake_dsn else None
+        create_engine(resolved.intake_dsn, future=True, pool_pre_ping=True)
+        if resolved.intake_dsn
+        else None
     )
     app.state.audit_engine = (
-        make_engine(resolved.audit_dsn) if resolved.audit_dsn else None
+        create_engine(resolved.audit_dsn, future=True, pool_pre_ping=True)
+        if resolved.audit_dsn
+        else None
     )
     for engine in (app.state.intake_engine, app.state.audit_engine):
         if engine is not None:
@@ -292,36 +233,25 @@ def create_app(
 
     @app.middleware("http")
     async def _hosted_scope(request: Request, call_next: Any) -> Response:
-        # Bind here, not in the endpoint thread: that thread receives a copy.
         settings: Settings = request.app.state.settings
         if settings.hosted and (
             request.url.path == "/pdf-drafts"
             or request.url.path.startswith("/pdf-drafts/")
         ):
             return _error(request, "PDF review is available locally only", 403)
-        reviewer = authenticate(request) if settings.hosted else None
-        request.state.reviewer = reviewer
-        tokens = bind_scope(hosted=settings.hosted, reviewer=reviewer)
-        try:
-            return cast(Response, await call_next(request))
-        finally:
-            reset_scope(tokens)
+        request.state.reviewer = authenticate(request) if settings.hosted else None
+        return cast(Response, await call_next(request))
 
     @app.get("/")
     def index(request: Request) -> Response:
-        denied = _unsigned_response(request)
-        if denied is not None:
-            return denied
-        demo = _prepare_demo(request)
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, _, _ = _engines(request.app)
-        overview = list_overview(
-            intake, attempt_id=None if demo is None else demo["attempt_id"]
-        )
-        if demo is not None:
-            overview = {**overview, **demo}
+        view = read_workspace_view(intake, scope=scope)
         context = {
-            "overview": overview,
-            "attempts": list_demo_attempts(intake) if demo else [],
+            "overview": view["overview"],
+            "attempts": view["attempts"],
             "last_run": request.query_params.get("last_run"),
             "last_status": request.query_params.get("last_status"),
             "duplicate": request.query_params.get("duplicate"),
@@ -329,7 +259,7 @@ def create_app(
             "duplicate_version": request.query_params.get("version"),
             "made_current": request.query_params.get("made_current"),
         }
-        return _render(request, "index.html", context, overview)
+        return _render(request, "index.html", context, view["overview"])
 
     @app.post("/demo-attempts/start-fresh")
     def start_fresh(request: Request) -> Response:
@@ -338,12 +268,14 @@ def create_app(
             return denied
         if not request.app.state.settings.hosted:
             return _error(request, "not found", 404)
-        reviewer = _reviewer_id(request)
-        assert reviewer is not None
-        _prepare_demo(request)
-        intake, _, _ = _engines(request.app)
-        started = start_fresh_attempt(intake, reviewer)
-        set_attempt(started["attempt_id"])
+        scope = _request_scope(request, start_fresh=True)
+        if isinstance(scope, Response):
+            return scope
+        started = {
+            "workspace_id": scope.workspace_id,
+            "attempt_id": scope.attempt_id,
+            "previous_attempt_id": scope.previous_attempt_id,
+        }
         if wants_json(request):
             return JSONResponse(started)
         return RedirectResponse("/", status_code=303)
@@ -355,21 +287,23 @@ def create_app(
             return denied
         if not request.app.state.settings.hosted:
             return _error(request, "attempt not found", 404)
-        _prepare_demo(request)
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, _, audit = _engines(request.app)
         try:
-            payload = read_demo_attempt(
-                intake=intake, audit=audit, attempt_id=attempt_id
+            payload = read_workspace_view(
+                intake, audit=audit, scope=scope, attempt_id=attempt_id
             )
         except AttemptNotFoundError as exc:
             return _error(request, str(exc), 404)
         if wants_json(request):
-            return JSONResponse(cast(dict[str, Any], payload))
+            return JSONResponse(payload)
         return _render(
             request,
             "index.html",
             {"overview": payload, "read_only": True},
-            cast(dict[str, Any], payload),
+            payload,
         )
 
     @app.post("/pdf-drafts")
@@ -381,21 +315,19 @@ def create_app(
         if len(data) > MAX_UPLOAD_BYTES:
             return _error(request, "PDF exceeds the 5 MiB limit", 413)
         try:
-            saved = None
-            if extraction is not None:
-                saved_data = extraction.file.read(1024 * 1024 + 1)
-                if len(saved_data) > 1024 * 1024:
-                    raise ValueError("Saved extraction exceeds 1 MiB")
-                saved = load_json(saved_data)
-                if saved is None:
-                    raise ValueError("Saved extraction must be an object")
+            extraction_data = (
+                extraction.file.read(pdf_intake.MAX_SAVED_EXTRACTION_BYTES + 1)
+                if extraction is not None
+                else None
+            )
             draft = pdf_intake.create_draft(
                 intake,
                 filename=file.filename or "upload.pdf",
                 data=data,
-                extraction=saved,
+                extraction=extraction_data,
+                scope=_pdf_scope(request),
             )
-        except ValueError as exc:
+        except (ValueError, PermissionError) as exc:
             return _pdf_error(request, exc)
         if wants_json(request):
             return _pdf_render(request, draft, 201)
@@ -405,16 +337,17 @@ def create_app(
     def view_pdf(request: Request, draft_id: str) -> Response:
         intake, _, _ = _engines(request.app)
         try:
-            return _pdf_render(request, pdf_intake.read_draft(intake, draft_id))
-        except LookupError as exc:
+            draft = pdf_intake.read_draft(intake, draft_id, scope=_pdf_scope(request))
+            return _pdf_render(request, draft)
+        except (LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
 
     @app.get("/pdf-drafts/{draft_id}/source")
     def pdf_source(request: Request, draft_id: str) -> Response:
         intake, _, _ = _engines(request.app)
         try:
-            data = pdf_intake.read_source(intake, draft_id)
-        except LookupError as exc:
+            data = pdf_intake.read_source(intake, draft_id, scope=_pdf_scope(request))
+        except (LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         return Response(
             data,
@@ -430,14 +363,15 @@ def create_app(
     async def edit_pdf(request: Request, draft_id: str) -> Response:
         intake, _, _ = _engines(request.app)
         try:
-            payload = await _pdf_payload(request)
-            fields = (
-                payload["fields"] if "fields" in payload else _pdf_form_fields(payload)
-            )
+            payload, is_form = await _pdf_payload(request)
             draft = pdf_intake.edit_draft(
-                intake, draft_id, revision=_pdf_revision(payload), fields=fields
+                intake,
+                draft_id,
+                payload=payload,
+                form=is_form,
+                scope=_pdf_scope(request),
             )
-        except (ValueError, LookupError) as exc:
+        except (ValueError, LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         return _pdf_render(request, draft)
 
@@ -445,7 +379,7 @@ def create_app(
     async def replace_pdf_source(request: Request, draft_id: str) -> Response:
         intake, _, _ = _engines(request.app)
         try:
-            payload = await _pdf_payload(request)
+            payload, _ = await _pdf_payload(request)
             file = payload.get("file")
             if not isinstance(file, FormUploadFile):
                 raise ValueError("A replacement PDF is required")
@@ -455,11 +389,12 @@ def create_app(
             draft = pdf_intake.replace_source(
                 intake,
                 draft_id,
-                revision=_pdf_revision(payload),
                 filename=file.filename or "upload.pdf",
                 data=data,
+                payload=payload,
+                scope=_pdf_scope(request),
             )
-        except (ValueError, LookupError) as exc:
+        except (ValueError, LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         return _pdf_render(request, draft)
 
@@ -467,19 +402,15 @@ def create_app(
     async def confirm_pdf(request: Request, draft_id: str) -> Response:
         intake, _, _ = _engines(request.app)
         try:
-            payload = await _pdf_payload(request)
+            payload, is_form = await _pdf_payload(request)
             draft = pdf_intake.confirm_draft(
                 intake,
                 draft_id,
-                revision=_pdf_revision(payload),
-                binding=_pdf_binding(payload),
-                reviewed_fields=(
-                    payload.get("fields")
-                    if "application/json" in request.headers.get("content-type", "")
-                    else _pdf_form_fields(payload)
-                ),
+                payload=payload,
+                form=is_form,
+                scope=_pdf_scope(request),
             )
-        except (ValueError, LookupError) as exc:
+        except (ValueError, LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         return _pdf_render(request, draft)
 
@@ -487,19 +418,15 @@ def create_app(
     async def intake_pdf(request: Request, draft_id: str) -> Response:
         intake, _, _ = _engines(request.app)
         try:
-            payload = await _pdf_payload(request)
+            payload, is_form = await _pdf_payload(request)
             submission = pdf_intake.intake_draft(
                 intake,
                 draft_id,
-                revision=_pdf_revision(payload),
-                binding=_pdf_binding(payload),
-                reviewed_fields=(
-                    payload.get("fields")
-                    if "application/json" in request.headers.get("content-type", "")
-                    else _pdf_form_fields(payload)
-                ),
+                payload=payload,
+                form=is_form,
+                scope=_pdf_scope(request),
             )
-        except (ValueError, LookupError) as exc:
+        except (ValueError, LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         if wants_json(request):
             return JSONResponse(submission)
@@ -507,9 +434,11 @@ def create_app(
 
     @app.post("/ingest")
     def ingest(request: Request, file: UploadFile) -> Response:
-        demo = _prepare_mutation(request)
-        if isinstance(demo, Response):
-            return demo
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
+        if scope.is_read_only_attempt:
+            raise AttemptReadOnlyError("attempt-read-only")
         intake, _, _ = _engines(request.app)
         filename = file.filename or "upload.csv"
         data = file.file.read(MAX_UPLOAD_BYTES + 1)
@@ -519,11 +448,14 @@ def create_app(
                 intake,
                 f"{filename}: upload exceeds {MAX_UPLOAD_BYTES} bytes",
                 status_code=413,
+                scope=scope,
             )
         try:
-            submission = ingest_submission(intake, filename=filename, data=data)
+            submission = ingest_submission(
+                intake, filename=filename, data=data, scope=scope
+            )
         except ValueError as exc:
-            return _index_error(request, intake, str(exc), status_code=400)
+            return _index_error(request, intake, str(exc), status_code=400, scope=scope)
         if wants_json(request):
             return JSONResponse(submission)
         if submission["duplicate"]:
@@ -540,12 +472,12 @@ def create_app(
 
     @app.post("/runs")
     def run_checks(request: Request) -> Response:
-        demo = _prepare_mutation(request)
-        if isinstance(demo, Response):
-            return demo
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, read_dsn, _ = _engines(request.app)
         try:
-            run = run_current_checks(intake=intake, read_dsn=read_dsn)
+            run = run_current_checks(intake=intake, read_dsn=read_dsn, scope=scope)
         except (NothingStagedError, StaleStagedError, CheckMissingError) as exc:
             return _error(
                 request, str(exc), 502 if isinstance(exc, CheckMissingError) else 409
@@ -561,48 +493,34 @@ def create_app(
 
     @app.get("/cases/{case_id}")
     def get_case(request: Request, case_id: str) -> Response:
-        denied = _unsigned_response(request)
-        if denied is not None:
-            return denied
-        _prepare_demo(request)
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, _, audit = _engines(request.app)
         try:
-            case = get_case_detail(intake=intake, audit=audit, case_id=case_id)
-        except CaseNotFoundError as exc:
-            return _error(request, str(exc), 404)
-        refused = request.query_params.get("resolve_refused")
-        context: dict[str, Any] = {
-            "case": case,
-            "next_action": refusal_guidance(
-                cast(dict[str, Any], case["resolution"])["reason"]
-            ),
-        }
-        if refused:
-            context["resolve_refused"] = refused
-            context["refusal_guidance"] = refusal_guidance(refused)
-        return _render(request, "case.html", context, case)
-
-    @app.post("/cases/{case_id}/resolve")
-    def resolve(request: Request, case_id: str) -> Response:
-        demo = _prepare_mutation(request)
-        if isinstance(demo, Response):
-            return demo
-        intake, _, audit = _engines(request.app)
-        try:
-            outcome = resolve_case(
+            case = get_case_detail(
                 intake=intake,
                 audit=audit,
                 case_id=case_id,
-                attempt_id=None if demo is None else demo["attempt_id"],
+                scope=scope,
+                refused_reason=request.query_params.get("resolve_refused") or None,
             )
         except CaseNotFoundError as exc:
             return _error(request, str(exc), 404)
-        if outcome.get("reason") == "attempt-read-only":
-            if wants_json(request):
-                return JSONResponse(
-                    {**outcome, "detail": "attempt-read-only"}, status_code=409
-                )
-            return _error(request, "attempt-read-only", 409)
+        return _render(request, "case.html", {"case": case}, case)
+
+    @app.post("/cases/{case_id}/resolve")
+    def resolve(request: Request, case_id: str) -> Response:
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
+        intake, _, audit = _engines(request.app)
+        try:
+            outcome = resolve_case(
+                intake=intake, audit=audit, case_id=case_id, scope=scope
+            )
+        except CaseNotFoundError as exc:
+            return _error(request, str(exc), 404)
         if wants_json(request):
             return JSONResponse(cast(dict[str, Any], outcome))
         if outcome["resolved"]:

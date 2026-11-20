@@ -5,8 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +21,9 @@ def reset_db() -> None:
     """Archive replay requires no database."""
 
 
-def test_ten_first_outputs_replay_without_credentials_and_preserve_provenance(
+def _build_synthetic_archive(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     from invoice_triage import evaluation, model_runner
     from invoice_triage.extraction import RESULT
 
@@ -154,6 +152,16 @@ def test_ten_first_outputs_replay_without_credentials_and_preserve_provenance(
     }
     path = root / "manifest.json"
     path.write_text(json.dumps(manifest))
+    capsys.readouterr()
+    return path, manifest, gold
+
+
+def test_ten_first_outputs_replay_without_credentials_and_preserve_provenance(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from invoice_triage import evaluation
+
+    path, _, _ = _build_synthetic_archive(tmp_path, capsys)
     report = evaluation.replay(path)
     capsys.readouterr()
     assert report["arms"]["model"]["primary"] == {"correct": 7, "total": 10}
@@ -167,42 +175,130 @@ def test_ten_first_outputs_replay_without_credentials_and_preserve_provenance(
         "extract/transport_failure": 1,
         "extract/uncertain_send": 1,
     }
-    state_bytes, seal_bytes = (
-        (root / "state.json").read_bytes(),
-        (root / "seal.json").read_bytes(),
-    )
+
+
+def test_verify_archived_run_refuses_tampered_reservation_and_model_arm(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from invoice_triage import evaluation, extraction, model_runner
+
+    path, _, gold = _build_synthetic_archive(tmp_path, capsys)
+    manifest_model, artifacts, _ = evaluation.load_bundle(path)
+    arms = {
+        arm: extraction.load_json(artifacts[name])
+        for arm, name in manifest_model.arms.items()
+    }
+    assert manifest_model.run is not None
+
     for incorrect_total in ("0", "999999"):
-        state = json.loads(state_bytes)
+        state = extraction.load_json(artifacts[manifest_model.run.state])
         state["planned_reservation_usd"] = incorrect_total
-        seal = json.loads(seal_bytes)
-        seal["state_sha256"] = model_runner.digest(model_runner.canonical(state))
-        (root / "state.json").write_text(json.dumps(state))
-        (root / "seal.json").write_text(json.dumps(seal))
-        for name in ("state.json", "seal.json"):
-            manifest["hashes"][name] = hashlib.sha256(
-                (root / name).read_bytes()
-            ).hexdigest()
-        path.write_text(json.dumps(manifest))
-        refused = subprocess.run(
-            [sys.executable, "-m", "invoice_triage.evaluation", "replay", str(path)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert refused.returncode == 2, refused.stdout
-        assert "reservation total" in refused.stderr
-    (root / "state.json").write_bytes(state_bytes)
-    (root / "seal.json").write_bytes(seal_bytes)
-    for name in ("state.json", "seal.json"):
-        manifest["hashes"][name] = hashlib.sha256(
-            (root / name).read_bytes()
-        ).hexdigest()
-    altered = json.loads((root / "model.json").read_text())
-    altered["opaque-7"] = gold["opaque-7"]
-    (root / "model.json").write_text(json.dumps(altered))
-    manifest["hashes"]["model.json"] = hashlib.sha256(
-        (root / "model.json").read_bytes()
-    ).hexdigest()
-    path.write_text(json.dumps(manifest))
+        seal = extraction.load_json(artifacts[manifest_model.run.seal])
+        seal["state_sha256"] = extraction.digest(extraction.canonical(state))
+        mutated_artifacts = dict(artifacts)
+        mutated_artifacts[manifest_model.run.state] = extraction.canonical(state)
+        mutated_artifacts[manifest_model.run.seal] = extraction.canonical(seal)
+        with pytest.raises(ValueError, match="reservation total"):
+            model_runner.verify_archived_run(manifest_model, mutated_artifacts, arms)
+
+    mutated_arms = {
+        **arms,
+        "model": {**arms["model"], "opaque-7": gold["opaque-7"]},
+    }
     with pytest.raises(ValueError, match="first result"):
-        evaluation.replay(path)
+        model_runner.verify_archived_run(manifest_model, artifacts, mutated_arms)
+
+
+@pytest.mark.parametrize(
+    "raw_payload",
+    [
+        b"[]",
+        json.dumps(
+            {"candidates": [{"finishReason": "STOP", "content": None}]}
+        ).encode(),
+        json.dumps(
+            {"candidates": [{"finishReason": "STOP", "content": {"parts": [None]}}]}
+        ).encode(),
+        json.dumps(
+            {"candidates": [{"finishReason": "STOP", "content": {"parts": [["text"]]}}]}
+        ).encode(),
+    ],
+    ids=["non-dict-root", "null-content", "null-part", "list-part"],
+)
+def test_verify_archived_run_handles_malformed_raw_gemini_envelopes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], raw_payload: bytes
+) -> None:
+    from invoice_triage import evaluation, extraction, model_runner
+
+    path, _, gold = _build_synthetic_archive(tmp_path, capsys)
+    manifest_model, artifacts, _ = evaluation.load_bundle(path)
+    arms = {
+        arm: extraction.load_json(artifacts[name])
+        for arm, name in manifest_model.arms.items()
+    }
+    assert manifest_model.run is not None
+    raw_name = manifest_model.run.raw_files["evaluation-7"]
+
+    state = extraction.load_json(artifacts[manifest_model.run.state])
+    state["attempts"]["evaluation-7"]["raw_sha256"] = extraction.digest(raw_payload)
+    state["attempts"]["evaluation-7"]["returned_model"] = None
+    state["attempts"]["evaluation-7"]["usage"] = None
+    seal = extraction.load_json(artifacts[manifest_model.run.seal])
+    seal["state_sha256"] = extraction.digest(extraction.canonical(state))
+
+    mutated_artifacts = dict(artifacts)
+    mutated_artifacts[raw_name] = raw_payload
+    mutated_artifacts[manifest_model.run.state] = extraction.canonical(state)
+    mutated_artifacts[manifest_model.run.seal] = extraction.canonical(seal)
+
+    evidence = model_runner.verify_archived_run(manifest_model, mutated_artifacts, arms)
+    assert evidence["attempts"]["evaluation-7"]["status"] == "failure"
+
+    state["attempts"]["evaluation-7"]["result"] = gold["opaque-7"]
+    seal["state_sha256"] = extraction.digest(extraction.canonical(state))
+    mutated_artifacts[manifest_model.run.state] = extraction.canonical(state)
+    mutated_artifacts[manifest_model.run.seal] = extraction.canonical(seal)
+    mutated_arms = {
+        **arms,
+        "model": {**arms["model"], "opaque-7": gold["opaque-7"]},
+    }
+    with pytest.raises(ValueError, match="first raw response"):
+        model_runner.verify_archived_run(
+            manifest_model, mutated_artifacts, mutated_arms
+        )
+
+
+def test_extraction_json_and_artifact_primitives(tmp_path: Path) -> None:
+    from invoice_triage import extraction
+
+    assert extraction.load_json(b'{"a": 1, "b": [2]}') == {"a": 1, "b": [2]}
+    with pytest.raises(ValueError, match="duplicate JSON key"):
+        extraction.load_json(b'{"a": 1, "a": 2}')
+    with pytest.raises(ValueError, match="invalid JSON constant"):
+        extraction.load_json(b'{"a": NaN}')
+
+    assert extraction.canonical({"b": 1, "a": 2}) == b'{"a":2,"b":1}'
+    with pytest.raises(ValueError):
+        extraction.canonical({"a": float("nan")})
+    assert extraction.digest(b"abc") == hashlib.sha256(b"abc").hexdigest()
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "ok.json").write_bytes(b"{}")
+    assert extraction.read_artifact(bundle, "ok.json") == b"{}"
+
+    (bundle / ".env").write_bytes(b"SECRET=1")
+    with pytest.raises(ValueError, match="environment and key files"):
+        extraction.read_artifact(bundle, ".env")
+
+    (bundle / "secret.pem").write_bytes(b"KEY")
+    with pytest.raises(ValueError, match="environment and key files"):
+        extraction.read_artifact(bundle, "secret.pem")
+
+    (tmp_path / "outside.json").write_bytes(b"{}")
+    with pytest.raises(ValueError, match="leaves its bundle"):
+        extraction.read_artifact(bundle, "../outside.json")
+
+    (bundle / "huge.bin").write_bytes(b"x" * (8 * 1024 * 1024 + 1))
+    with pytest.raises(ValueError, match="exceeds 8 MiB"):
+        extraction.read_artifact(bundle, "huge.bin")

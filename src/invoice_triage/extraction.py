@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from collections.abc import Sequence
 from datetime import date
-from typing import Annotated, Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
@@ -90,14 +94,70 @@ Result = Annotated[Success | Failure, Field(discriminator="status")]
 RESULT = TypeAdapter(Result)
 
 
-def validate_result(raw: object, pages: list[str]) -> Success | Failure:
+def canonical(value: Any) -> bytes:
+    """Serialize JSON deterministically without NaN or Infinity."""
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode()
+
+
+def digest(data: bytes) -> str:
+    """Return the lowercase hexadecimal SHA-256 digest of bytes."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def read_artifact(root: Path, name: str) -> bytes:
+    """Read a bundle-contained non-secret artifact up to 8 MiB."""
+    if any(p.startswith(".env") or p.endswith(".pem") for p in Path(name).parts):
+        raise ValueError("environment and key files are not replay artifacts")
+    path = (root / name).resolve()
+    if not path.is_relative_to(root.resolve()):
+        raise ValueError("artifact path leaves its bundle")
+    with path.open("rb") as source:
+        data = source.read(8 * 1024 * 1024 + 1)
+    if len(data) > 8 * 1024 * 1024:
+        raise ValueError("artifact exceeds 8 MiB")
+    return data
+
+
+def load_json(data: bytes) -> Any:
+    """Decode strict JSON rejecting duplicate keys and nonstandard constants."""
+
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"invalid JSON constant: {value}")
+
+    def unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON key")
+            result[key] = value
+        return result
+
+    return json.loads(
+        data, object_pairs_hook=unique_keys, parse_constant=reject_constant
+    )
+
+
+def _check_evidence_spans(fields: Fields, pages: Sequence[str]) -> None:
+    for field in fields.items().values():
+        for span in field.evidence:
+            if not (
+                1 <= span.page <= len(pages)
+                and span.start < span.end <= len(pages[span.page - 1])
+            ):
+                raise ValueError("evidence span is outside the canonical page text")
+
+
+def validate_fields(raw: object, pages: Sequence[str] = ()) -> Fields:
+    """Validate and normalize the five reviewed invoice fields against page spans."""
+    fields = Fields.model_validate(raw)
+    _check_evidence_spans(fields, pages)
+    return fields
+
+
+def validate_result(raw: object, pages: Sequence[str]) -> Success | Failure:
     result = RESULT.validate_python(raw)
     if isinstance(result, Success):
-        for field in result.fields.items().values():
-            for span in field.evidence:
-                if not (
-                    1 <= span.page <= len(pages)
-                    and span.start < span.end <= len(pages[span.page - 1])
-                ):
-                    raise ValueError("evidence span is outside the canonical page text")
+        _check_evidence_spans(result.fields, pages)
     return result

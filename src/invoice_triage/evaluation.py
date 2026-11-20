@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from collections import Counter
@@ -15,8 +14,13 @@ from invoice_triage.extraction import (
     Failure,
     StrictModel,
     Success,
+    canonical,
+    digest,
+    load_json,
+    read_artifact,
     validate_result,
 )
+from invoice_triage.model_runner import verify_archived_run
 from invoice_triage.pdf_text import ADAPTER, MAX_PDF_BYTES, PDFText, read_pdf
 
 
@@ -66,47 +70,17 @@ class Manifest(StrictModel):
 
 def scorer_identity() -> str:
     root = Path(__file__).resolve().parent
-    return hashlib.sha256(
+    return digest(
         b"".join(
             (root / name).read_bytes()
             for name in (
                 "evaluation.py",
                 "extraction.py",
                 "pdf_text.py",
-                "comparison_evidence.py",
+                "model_runner.py",
                 "deterministic.py",
             )
         )
-    ).hexdigest()
-
-
-def read_artifact(root: Path, name: str) -> bytes:
-    if any(p.startswith(".env") or p.endswith(".pem") for p in Path(name).parts):
-        raise ValueError("environment and key files are not replay artifacts")
-    path = (root / name).resolve()
-    if not path.is_relative_to(root.resolve()):
-        raise ValueError("artifact path leaves its bundle")
-    with path.open("rb") as source:
-        data = source.read(8 * 1024 * 1024 + 1)
-    if len(data) > 8 * 1024 * 1024:
-        raise ValueError("artifact exceeds 8 MiB")
-    return data
-
-
-def load_json(data: bytes) -> Any:
-    def reject_constant(value: str) -> None:
-        raise ValueError(f"invalid JSON constant: {value}")
-
-    def unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError("duplicate JSON key")
-            result[key] = value
-        return result
-
-    return json.loads(
-        data, object_pairs_hook=unique_keys, parse_constant=reject_constant
     )
 
 
@@ -146,7 +120,7 @@ def load_bundle(path: Path) -> tuple[Manifest, dict[str, bytes], dict[str, Any] 
     artifacts = {}
     for name, expected_hash in manifest.hashes.items():
         data = read_artifact(root, name)
-        if hashlib.sha256(data).hexdigest() != expected_hash:
+        if digest(data) != expected_hash:
             raise ValueError(f"artifact hash mismatch: {name}; create a new analysis")
         artifacts[name] = data
     if load_json(artifacts[manifest.schema_file]) != RESULT.json_schema():
@@ -154,13 +128,7 @@ def load_bundle(path: Path) -> tuple[Manifest, dict[str, bytes], dict[str, Any] 
     for doc in manifest.documents:
         converted = read_pdf(artifacts[doc.pdf])
         if not isinstance(converted, PDFText):
-            failure_hash = hashlib.sha256(
-                json.dumps(
-                    converted.model_dump(mode="json"),
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode()
-            ).hexdigest()
+            failure_hash = digest(canonical(converted.model_dump(mode="json")))
             if (
                 manifest.run is not None
                 and doc.pages == []
@@ -176,11 +144,11 @@ def load_bundle(path: Path) -> tuple[Manifest, dict[str, bytes], dict[str, Any] 
     raw_arms = {arm: load_json(artifacts[name]) for arm, name in manifest.arms.items()}
     if any(set(raw) != ids for raw in raw_arms.values()):
         raise ValueError("both arms must cover exactly the assigned documents")
-    run_evidence = None
-    if manifest.run is not None:
-        from invoice_triage.comparison_evidence import check_run
-
-        run_evidence = check_run(manifest, artifacts, raw_arms)
+    run_evidence = (
+        verify_archived_run(manifest, artifacts, raw_arms)
+        if manifest.run is not None
+        else None
+    )
     return manifest, artifacts, run_evidence
 
 
@@ -259,7 +227,7 @@ def replay(path: Path) -> dict[str, Any]:
         "version": "1",
         "scope": manifest.scope,
         "kind": manifest.kind,
-        "analysis_id": hashlib.sha256(manifest_bytes + identity.encode()).hexdigest(),
+        "analysis_id": digest(manifest_bytes + identity.encode()),
         "scorer_sha256": identity,
         "provenance": manifest.provenance.model_dump(),
         "source_base": manifest.source_base,

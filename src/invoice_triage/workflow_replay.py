@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import os
-import subprocess
 import sys
 import time
 from collections import Counter
@@ -15,8 +14,19 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from invoice_triage.evaluation import load_bundle, load_json, read_artifact, replay
-from invoice_triage.extraction import Failure, StrictModel, validate_result
+from invoice_triage.evaluation import load_bundle, replay
+from invoice_triage.extraction import (
+    Failure,
+    StrictModel,
+    load_json,
+    read_artifact,
+    validate_result,
+)
+from invoice_triage.governance import (
+    configure_governance,
+    core_identity,
+    provision_governance_schema,
+)
 
 POLICY = "confirm-unchanged-then-declared-source-replacement-v1"
 PINNED_CORE = "5d602428a93e5eee733b4ed1ffd06af4cbba250b"
@@ -55,30 +65,6 @@ class Plan(StrictModel):
     hashes: dict[str, str]
     observations: list[Observation]
     evidence_class: Literal["authored-example", "first-outputs", "fault-injection"]
-
-
-def core_identity() -> dict[str, str]:
-    import airflow_dq_agent
-
-    origin = Path(airflow_dq_agent.__file__).resolve()
-    result = subprocess.run(
-        ["git", "-C", str(origin.parent), "rev-parse", "--show-toplevel", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    root, head = result.stdout.strip().splitlines()
-    if Path(root) / "src/airflow_dq_agent/__init__.py" != origin or head != PINNED_CORE:
-        raise ValueError("workflow replay requires the pinned core checkout")
-    dirty = subprocess.run(
-        ["git", "-C", root, "status", "--porcelain", "--untracked-files=no"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    if dirty.stdout:
-        raise ValueError("pinned core has tracked changes")
-    return {"source": str(origin), "revision": head, "call": "in-process run_suite"}
 
 
 def execute(
@@ -360,10 +346,6 @@ def render(report: dict[str, Any]) -> str:
 
 
 def run(manifest_path: Path, plan_path: Path, workdir: Path) -> dict[str, Any]:
-    from airflow_dq_agent.adoption import (
-        apply_governance_schema,
-        provision_restricted_logins,
-    )
     from fastapi.testclient import TestClient
 
     from invoice_triage.app import create_app
@@ -403,38 +385,23 @@ def run(manifest_path: Path, plan_path: Path, workdir: Path) -> dict[str, Any]:
         sha(data) != manifest.hashes[name] for name, data in artifacts.items()
     ) or any(sha(data) != plan.hashes[name] for name, data in extras.items()):
         raise ValueError("saved artifact hash mismatch")
-    core = core_identity()
+    core = core_identity(PINNED_CORE)
     workdir.mkdir(parents=False, exist_ok=False)
     pg = LocalPostgres(workdir / "data", find_free_port())
     rows = []
-    old_env = {
-        name: os.environ.get(name)
-        for name in (
-            "TRACE_POSTGRES",
-            "AUDIT_DSN",
-            "LLM_MODE",
-            "APPLY_MODE",
-            "TRACES_DIR",
-        )
-    }
+    old_env: dict[str, str | None] | None = None
     try:
         pg.start()
-        os.environ.update(
-            TRACE_POSTGRES="true",
-            LLM_MODE="stub",
-            APPLY_MODE="off",
-            TRACES_DIR=str(workdir / "traces"),
-        )
+        old_env = configure_governance(traces_dir=workdir / "traces")
         for index, (arm, name) in enumerate(manifest.arms.items()):
             outputs = load_json(artifacts[name])
             for number, doc in enumerate(manifest.documents):
                 database = f"replay_{index}_{number}"
                 pg.ensure_database(database)
                 admin = pg.dsn(db=database)
-                apply_governance_schema(admin)
-                creds = provision_restricted_logins(admin)
+                creds = provision_governance_schema(admin)
                 intake = setup_database(admin)
-                os.environ["AUDIT_DSN"] = creds.audit_dsn
+                configure_governance(audit_dsn=creds.audit_dsn)
                 settings = Settings(
                     _env_file=None,
                     intake_dsn=intake.intake_dsn,
@@ -539,11 +506,12 @@ def run(manifest_path: Path, plan_path: Path, workdir: Path) -> dict[str, Any]:
         }
     finally:
         pg.stop()
-        for key, value in old_env.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+        if old_env is not None:
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
 
 def main(argv: list[str] | None = None) -> int:
