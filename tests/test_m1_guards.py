@@ -71,10 +71,10 @@ def test_errored_check_opens_case_and_blocks_resolve(
     import polars as pl
     from airflow_dq_agent.quality.suite import run_suite_on_frames
 
-    import invoice_triage.services as services
+    import invoice_triage.cases as cases
 
     _ingest(client, api_headers, "missing_amount.csv")
-    run = services.run_current_checks(
+    run = cases.run_current_checks(
         intake=make_engine(pg_dsns["intake"]),
         read_dsn=pg_dsns["read"],
         _suite_runner=lambda _dsn: run_suite_on_frames(

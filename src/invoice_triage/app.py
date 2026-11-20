@@ -17,6 +17,14 @@ from starlette.datastructures import UploadFile as FormUploadFile
 
 from invoice_triage import pdf_intake
 from invoice_triage.auth import verified_reviewer
+from invoice_triage.cases import (
+    CaseNotFoundError,
+    NothingStagedError,
+    StaleStagedError,
+    get_case_detail,
+    resolve_case,
+    run_current_checks,
+)
 from invoice_triage.governance import CheckMissingError, configure_governance
 from invoice_triage.intake import ingest_submission
 from invoice_triage.request_scope import (
@@ -26,15 +34,6 @@ from invoice_triage.request_scope import (
     install_scope,
     read_workspace_view,
     resolve_scope,
-)
-from invoice_triage.resolution import refusal_guidance
-from invoice_triage.services import (
-    CaseNotFoundError,
-    NothingStagedError,
-    StaleStagedError,
-    get_case_detail,
-    resolve_case,
-    run_current_checks,
 )
 from invoice_triage.settings import Settings
 
@@ -469,21 +468,15 @@ def create_app(
         intake, _, audit = _engines(request.app)
         try:
             case = get_case_detail(
-                intake=intake, audit=audit, case_id=case_id, scope=scope
+                intake=intake,
+                audit=audit,
+                case_id=case_id,
+                scope=scope,
+                refused_reason=request.query_params.get("resolve_refused") or None,
             )
         except CaseNotFoundError as exc:
             return _error(request, str(exc), 404)
-        refused = request.query_params.get("resolve_refused")
-        context: dict[str, Any] = {
-            "case": case,
-            "next_action": refusal_guidance(
-                cast(dict[str, Any], case["resolution"])["reason"]
-            ),
-        }
-        if refused:
-            context["resolve_refused"] = refused
-            context["refusal_guidance"] = refusal_guidance(refused)
-        return _render(request, "case.html", context, case)
+        return _render(request, "case.html", {"case": case}, case)
 
     @app.post("/cases/{case_id}/resolve")
     def resolve(request: Request, case_id: str) -> Response:

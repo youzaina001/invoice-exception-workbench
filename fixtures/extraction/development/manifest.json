@@ -139,7 +139,7 @@
     "reserved_status": "not-established"
   },
   "source_base": "c35cc65210ad8e1e963edefc3cd14170a6b23ce4",
-  "scorer_sha256": "c01a23299e2a8522851b32f514e075ffa7c48becd8e32fc4e33d14ef106816a5",
+  "scorer_sha256": "283ae48c37c37295ddba2d36290b83766f6c82dad925948b62fdf35e87807dee",
   "adapter": {
     "pypdf": "6.21.1",
     "strict": true,

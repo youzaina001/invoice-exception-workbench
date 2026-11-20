@@ -1,4 +1,4 @@
-"""M1 slice: run checks, present cases, and resolve exceptions."""
+"""Exception case lifecycle, check orchestration, and resolution gate."""
 
 from __future__ import annotations
 
@@ -21,29 +21,94 @@ from invoice_triage.request_scope import (
     ExecutionScope,
     scoped_transaction,
 )
-from invoice_triage.resolution import (
-    ResolutionDecision,
-    ResolutionRequest,
-    decide_resolution,
-)
 
 
 class NothingStagedError(RuntimeError):
-    pass
+    """Raised when running checks with no Current Submission staged."""
 
 
 class StaleStagedError(RuntimeError):
-    pass
+    """Raised when Current Submission changes during a check run."""
 
 
 class CaseNotFoundError(RuntimeError):
-    pass
+    """Raised when an Exception Case or its bound evidence cannot be found."""
+
+
+_GUIDANCE: dict[str, str] = {
+    "ok": "checks pass on the current version, press Resolve case to close it.",
+    "case-not-open": "none, this case is resolved.",
+    "attempt-read-only": (
+        "This Demo Attempt is read-only; return to the current Demo Attempt"
+        " to make changes."
+    ),
+    "errored-report": (
+        "The required check errored; inspect its message and rerun checks."
+    ),
+    "incomplete-report": (
+        "The check report is incomplete or its audit trace is unavailable; "
+        "run checks again, then resolve."
+    ),
+    "check-mismatch": (
+        "The latest verdict is for a different check; run the required checks."
+    ),
+    "stale-version": (
+        "A newer submission exists; run checks on the current version first."
+    ),
+    "snapshot-mismatch": (
+        "The staged row changed since the check run; run checks again first."
+    ),
+    "verdict-not-pass": (
+        "The latest verdict did not pass; ingest a corrected CSV "
+        "or upload and confirm a corrected PDF, then run fresh checks."
+    ),
+    "no-verdict": "No check run is recorded for this case; run checks first.",
+    "current-missing": (
+        "This invoice is no longer staged; re-upload its latest CSV "
+        "or confirm and submit its latest PDF, run checks, then resolve."
+    ),
+}
+
+
+def _guidance_for(reason: str) -> str:
+    return _GUIDANCE.get(reason, "Resolve was refused; run checks and try again.")
 
 
 def _attempt_sql(attempt: str | None) -> tuple[str, dict[str, str]]:
     if attempt is None:
         return "", {}
     return " AND attempt_id = :attempt", {"attempt": attempt}
+
+
+def _evaluate_resolution(
+    case: RowMapping,
+    verdict: RowMapping | None,
+    current: RowMapping | None,
+    *,
+    audit_available: bool,
+    attempt_read_only: bool,
+) -> tuple[bool, str]:
+    if str(case["status"]) != "open":
+        return False, "case-not-open"
+    if attempt_read_only:
+        return False, "attempt-read-only"
+    if verdict is None:
+        return False, "no-verdict"
+    if current is None:
+        return False, "current-missing"
+    if str(verdict["status"]) == "error":
+        return False, "errored-report"
+    if not audit_available:
+        return False, "incomplete-report"
+    if str(verdict["check_id"]) != AMOUNT_CHECK_ID:
+        return False, "check-mismatch"
+    if int(verdict["version"]) != int(current["version"]):
+        return False, "stale-version"
+    if str(verdict["snapshot"]) != str(current["snapshot"]):
+        return False, "snapshot-mismatch"
+    if str(verdict["status"]) != "pass":
+        return False, "verdict-not-pass"
+    return True, "ok"
 
 
 def run_current_checks(
@@ -53,6 +118,7 @@ def run_current_checks(
     scope: ExecutionScope | None = None,
     _suite_runner: Callable[[str], Any] | None = None,
 ) -> dict[str, object]:
+    """Run required checks against Current Submission and record verdict/case."""
     resolved = scope or ExecutionScope.local()
     # ponytail: serialize the singleton staging journey; use per-invoice
     # staging and locks if simultaneous invoice checks become necessary.
@@ -154,7 +220,9 @@ def get_case_detail(
     audit: Engine,
     case_id: str,
     scope: ExecutionScope | None = None,
+    refused_reason: str | None = None,
 ) -> dict[str, object]:
+    """Read an Exception Case, its check/audit history, and resolution state."""
     resolved = scope or ExecutionScope.local()
     with scoped_transaction(intake, resolved, mutate=False) as conn:
         case = (
@@ -223,16 +291,31 @@ def get_case_detail(
         audit_view = read_audit_lineage(
             audit, verdicts=history_verdicts, latest_verdict=verdict
         )
-    decision = _resolution_decision(case, verdict, current, audit_view.report_available)
-    if resolved.attempt_id is not None and case["attempt_id"] != resolved.attempt_id:
-        decision = ResolutionDecision(False, "attempt-read-only")
+    attempt_read_only = resolved.is_read_only_attempt or (
+        resolved.attempt_id is not None
+        and str(case["attempt_id"] or "") != resolved.attempt_id
+    )
+    allowed, reason = _evaluate_resolution(
+        case,
+        verdict,
+        current,
+        audit_available=audit_view.report_available,
+        attempt_read_only=attempt_read_only,
+    )
     return {
         "case_id": str(case["id"]),
         "invoice_ref": str(case["invoice_ref"]),
         "submission_id": str(case["source_submission_id"]),
         "source_version": int(source_version),
         "checked_submission_id": str(verdict["submission_id"]),
-        "resolution": {"allowed": decision.allowed, "reason": decision.reason},
+        "attempt_read_only": attempt_read_only,
+        "resolution": {"allowed": allowed, "reason": reason},
+        "guidance": _guidance_for(reason),
+        "refusal": (
+            {"reason": refused_reason, "guidance": _guidance_for(refused_reason)}
+            if refused_reason
+            else None
+        ),
         "version": int(verdict["version"]),
         "check_id": str(case["check_id"]),
         "status": str(case["status"]),
@@ -271,14 +354,14 @@ def get_case_detail(
 def _refused_after_race(
     conn: Connection,
     *,
+    audit: Engine,
     case_id: str,
-    verdict: RowMapping,
-    attempt_id: str | None = None,
+    scope: ExecutionScope,
 ) -> dict[str, object]:
-    """Re-read a lost resolve race and use the same gate as the first attempt."""
+    """Re-read a lost resolve race and run the live resolution gate."""
     case = (
         conn.execute(
-            text("SELECT status, invoice_ref FROM wb.cases WHERE id = :id"),
+            text("SELECT status, invoice_ref, attempt_id FROM wb.cases WHERE id = :id"),
             {"id": case_id},
         )
         .mappings()
@@ -286,43 +369,48 @@ def _refused_after_race(
     )
     if case is None:
         raise CaseNotFoundError(f"case {case_id} not found")
-    current = current_staged(
-        conn, invoice_ref=str(case["invoice_ref"]), attempt_id=attempt_id
+    verdict = (
+        conn.execute(
+            text(
+                "SELECT submission_id, version, snapshot, run_id,"
+                " report_id, check_id, status, audit_event_id"
+                " FROM wb.case_verdicts WHERE case_id = :id"
+                " ORDER BY id DESC LIMIT 1"
+            ),
+            {"id": case_id},
+        )
+        .mappings()
+        .first()
     )
-    decision = _resolution_decision(case, verdict, current, True)
+    current = current_staged(
+        conn, invoice_ref=str(case["invoice_ref"]), attempt_id=scope.attempt_id
+    )
+    audit_view = (
+        read_audit_lineage(audit, latest_verdict=verdict)
+        if verdict is not None
+        else None
+    )
+    attempt_read_only = scope.is_read_only_attempt or (
+        scope.attempt_id is not None
+        and str(case["attempt_id"] or "") != scope.attempt_id
+    )
+    allowed, reason = _evaluate_resolution(
+        case,
+        verdict,
+        current,
+        audit_available=audit_view.report_available
+        if audit_view is not None
+        else False,
+        attempt_read_only=attempt_read_only,
+    )
+    effective_reason = reason if not allowed else "case-not-open"
     return {
         "case_id": case_id,
         "status": str(case["status"]),
         "resolved": False,
-        "reason": decision.reason if not decision.allowed else "case-not-open",
+        "reason": effective_reason,
+        "guidance": _guidance_for(effective_reason),
     }
-
-
-def _resolution_decision(
-    case: RowMapping,
-    verdict: RowMapping | None,
-    current: RowMapping | None,
-    audit_available: bool,
-) -> ResolutionDecision:
-    if str(case["status"]) != "open":
-        return ResolutionDecision(False, "case-not-open")
-    if verdict is None:
-        return ResolutionDecision(False, "no-verdict")
-    if current is None:
-        return ResolutionDecision(False, "current-missing")
-    return decide_resolution(
-        ResolutionRequest(
-            case_status=str(case["status"]),
-            current_version=int(current["version"]),
-            current_snapshot=str(current["snapshot"]),
-            verdict_version=int(verdict["version"]),
-            verdict_snapshot=str(verdict["snapshot"]),
-            verdict_status=str(verdict["status"]),
-            verdict_check_id=str(verdict["check_id"]),
-            required_check_id=AMOUNT_CHECK_ID,
-            report_complete=audit_available,
-        )
-    )
 
 
 def resolve_case(
@@ -332,6 +420,7 @@ def resolve_case(
     case_id: str,
     scope: ExecutionScope | None = None,
 ) -> dict[str, object]:
+    """Resolve an open Exception Case if Current Submission has a fresh pass."""
     resolved = scope or ExecutionScope.local()
     with scoped_transaction(intake, resolved, mutate=True, lock_staging=True) as conn:
         case = (
@@ -373,18 +462,22 @@ def resolve_case(
             if verdict is not None
             else None
         )
-        decision = _resolution_decision(
+        allowed, reason = _evaluate_resolution(
             case,
             verdict,
             current,
-            audit_view.report_available if audit_view is not None else False,
+            audit_available=(
+                audit_view.report_available if audit_view is not None else False
+            ),
+            attempt_read_only=False,
         )
-        if not decision.allowed:
+        if not allowed:
             return {
                 "case_id": case_id,
                 "status": str(case["status"]),
                 "resolved": False,
-                "reason": decision.reason,
+                "reason": reason,
+                "guidance": _guidance_for(reason),
             }
         assert verdict is not None
         updated = conn.execute(
@@ -407,14 +500,15 @@ def resolve_case(
         if updated.rowcount != 1:
             return _refused_after_race(
                 conn,
+                audit=audit,
                 case_id=case_id,
-                verdict=verdict,
-                attempt_id=resolved.attempt_id,
+                scope=resolved,
             )
         return {
             "case_id": case_id,
             "status": "resolved",
             "resolved": True,
             "reason": "ok",
+            "guidance": _guidance_for("ok"),
             "resolved_run_id": str(verdict["run_id"]),
         }

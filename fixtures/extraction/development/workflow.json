@@ -1,7 +1,7 @@
 {
   "version": "1",
-  "manifest_sha256": "8233497152e9462bc08ca6db8b6749e899ffaa516b6e60dd9deccd8873287624",
-  "code_sha256": "01ca46dc0c092d938a6b651fb681e765909a09aec74534f25c365a31184e138d",
+  "manifest_sha256": "8354bc5a3dbe30722c80815e990f973d39f6942de71bc7359637576fa6f85147",
+  "code_sha256": "280a84769548b52cd630f8d67f525a00dd072aa1378f00e89dc2abb8b186a411",
   "core_revision": "5d602428a93e5eee733b4ed1ffd06af4cbba250b",
   "policy": "confirm-unchanged-then-declared-source-replacement-v1",
   "expected": {
