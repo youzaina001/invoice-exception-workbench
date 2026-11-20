@@ -6,18 +6,21 @@ import csv
 import hashlib
 import io
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation, localcontext
+from typing import Any
 from uuid import uuid4
 
-from airflow_dq_agent.contracts.models import AuditEvent
-from airflow_dq_agent.quality.suite import run_quality_suite
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine, RowMapping
 
-from invoice_triage.audit import audit_labels, read_audit_events
-from invoice_triage.core_integration import AMOUNT_CHECK_ID, ensure_registered
+from invoice_triage.governance import (
+    AMOUNT_CHECK_ID,
+    execute_amount_check,
+    read_audit_lineage,
+)
 from invoice_triage.request_scope import current_attempt, current_reviewer, set_attempt
 from invoice_triage.resolution import (
     ResolutionDecision,
@@ -41,10 +44,6 @@ class NothingStagedError(RuntimeError):
 
 
 class StaleStagedError(RuntimeError):
-    pass
-
-
-class CheckMissingError(RuntimeError):
     pass
 
 
@@ -422,8 +421,12 @@ def _current_staged(
     return conn.execute(text(query + " LIMIT 1"), params).mappings().first()
 
 
-def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
-    ensure_registered()
+def run_current_checks(
+    *,
+    intake: Engine,
+    read_dsn: str,
+    _suite_runner: Callable[[str], Any] | None = None,
+) -> dict[str, object]:
     # ponytail: serialize the singleton staging journey; use per-invoice
     # staging and locks if simultaneous invoice checks become necessary.
     with intake.begin() as conn:
@@ -435,11 +438,8 @@ def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
         submission_id = str(staged["submission_id"])
         version = int(staged["version"])
         snapshot = str(staged["snapshot"])
-        report = run_quality_suite(read_dsn)
-        result = report.get(AMOUNT_CHECK_ID)
-        if result is None:
-            raise CheckMissingError(f"required check {AMOUNT_CHECK_ID} did not run")
-        status = result.status.value
+        checked = execute_amount_check(read_dsn, _suite_runner=_suite_runner)
+        status = checked.status
         if _current_staged(conn) != staged:
             raise StaleStagedError("staging changed during the check run; rerun checks")
         extra, extra_params = _attempt_sql(current_attempt())
@@ -460,8 +460,8 @@ def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
                 "submission_id": submission_id,
                 "invoice_ref": invoice_ref,
                 "version": version,
-                "run_id": report.run_id,
-                "report_id": report.report_id,
+                "run_id": checked.run_id,
+                "report_id": checked.report_id,
                 "check_id": AMOUNT_CHECK_ID,
                 "status": status,
                 "case_id": None,
@@ -498,23 +498,23 @@ def run_current_checks(*, intake: Engine, read_dsn: str) -> dict[str, object]:
                 "sid": submission_id,
                 "ver": version,
                 "snap": snapshot,
-                "run": report.run_id,
-                "rep": report.report_id,
+                "run": checked.run_id,
+                "rep": checked.report_id,
                 "check": AMOUNT_CHECK_ID,
                 "status": status,
-                "evt": report.audit_event_id,
-                "nfail": result.n_failed,
-                "ntot": result.n_total,
-                "msg": result.message,
-                "samples": json.dumps(result.sample_failures),
+                "evt": checked.audit_event_id,
+                "nfail": checked.n_failed,
+                "ntot": checked.n_total,
+                "msg": checked.message,
+                "samples": json.dumps(checked.sample_failures),
             },
         )
         return {
             "submission_id": submission_id,
             "invoice_ref": invoice_ref,
             "version": version,
-            "run_id": report.run_id,
-            "report_id": report.report_id,
+            "run_id": checked.run_id,
+            "report_id": checked.report_id,
             "check_id": AMOUNT_CHECK_ID,
             "status": status,
             "case_id": case_id,
@@ -621,10 +621,10 @@ def get_case_detail(
             .mappings()
             .all()
         )
-    events = read_audit_events(audit, [str(v["run_id"]) for v in history_verdicts])
-    latest_events = [e for e in events if e.quality_run_id == str(verdict["run_id"])]
-    audit_available = _audit_available(verdict, events)
-    decision = _resolution_decision(case, verdict, current, audit_available)
+    audit_view = read_audit_lineage(
+        audit, verdicts=history_verdicts, latest_verdict=verdict
+    )
+    decision = _resolution_decision(case, verdict, current, audit_view.report_available)
     if current_attempt() is not None and case["attempt_id"] != current_attempt():
         decision = ResolutionDecision(False, "attempt-read-only")
     return {
@@ -648,18 +648,9 @@ def get_case_detail(
             "message": verdict["message"],
             "sample_failures": verdict["sample_failures"],
         },
-        "audit": audit_labels(latest_events, audit_available),
+        "audit": audit_view.labels,
         "history": {
-            "audit": [
-                {
-                    "event_id": e.event_id,
-                    "run_id": e.quality_run_id,
-                    "kind": e.kind,
-                    "label": e.kind.replace("_", " ").capitalize(),
-                    "occurred_at": e.occurred_at.isoformat(),
-                }
-                for e in events
-            ],
+            "audit": audit_view.events,
             "submissions": [
                 {
                     "version": int(h["version"]),
@@ -849,19 +840,7 @@ def read_demo_attempt(
             .mappings()
             .all()
         )
-    with audit.connect() as conn:
-        traces = (
-            conn.execute(
-                text(
-                    "SELECT trace_id, kind, body->>'quality_run_id' AS run_id"
-                    " FROM dq.traces WHERE attempt_id = :attempt"
-                    " ORDER BY recorded_at, seq"
-                ),
-                {"attempt": attempt_id},
-            )
-            .mappings()
-            .all()
-        )
+    audit_view = read_audit_lineage(audit, attempt_id=attempt_id)
     return {
         "workspace_id": str(attempt["workspace_id"]),
         "attempt_id": str(attempt["id"]),
@@ -875,14 +854,7 @@ def read_demo_attempt(
             }
             for row in verdicts
         ],
-        "audit": [
-            {
-                "event_id": row["trace_id"],
-                "run_id": row["run_id"],
-                "kind": row["kind"],
-            }
-            for row in traces
-        ],
+        "audit": audit_view.events,
     }
 
 
@@ -960,18 +932,6 @@ def _refused_after_race(
     }
 
 
-def _audit_available(verdict: RowMapping | None, events: list[AuditEvent]) -> bool:
-    if verdict is None or verdict["audit_event_id"] is None:
-        return False
-    return any(
-        event.event_id == str(verdict["audit_event_id"])
-        and event.kind == "quality_report"
-        and event.quality_run_id == str(verdict["run_id"])
-        and event.report_id == str(verdict["report_id"])
-        for event in events
-    )
-
-
 def _resolution_decision(
     case: RowMapping,
     verdict: RowMapping | None,
@@ -1038,9 +998,16 @@ def resolve_case(
             .first()
         )
         current = _current_staged(conn, str(case["invoice_ref"]))
-        events = read_audit_events(audit, [str(verdict["run_id"])]) if verdict else []
+        audit_view = (
+            read_audit_lineage(audit, latest_verdict=verdict)
+            if verdict is not None
+            else None
+        )
         decision = _resolution_decision(
-            case, verdict, current, _audit_available(verdict, events)
+            case,
+            verdict,
+            current,
+            audit_view.report_available if audit_view is not None else False,
         )
         if not decision.allowed:
             return {

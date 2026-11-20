@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from invoice_triage.core_integration import AMOUNT_CHECK_ID
+from invoice_triage.governance import AMOUNT_CHECK_ID
 from invoice_triage.resolution import ResolutionRequest, decide_resolution
 
 

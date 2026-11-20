@@ -75,12 +75,11 @@ def test_run_after_staging_replacement_is_rejected_without_verdict(
     client: TestClient,
     api_headers: dict[str, str],
     pg_dsns: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A report must never bind to a submission it did not check.
 
     When another upload replaces staging between staged capture and the
-    core read, the run is rejected (HTTP 409) and no verdict is stored.
+    core read, the run is rejected and no verdict is stored.
     """
     from airflow_dq_agent.quality.suite import run_quality_suite as real_suite
 
@@ -93,7 +92,6 @@ def test_run_after_staging_replacement_is_rejected_without_verdict(
             conn.execute(text("UPDATE wb.staging_invoice SET version = version + 1"))
         return real_suite(dsn)
 
-    monkeypatch.setattr(services, "run_quality_suite", _suite_with_interleaved_upload)
     first = client.post(
         "/ingest",
         files={
@@ -106,8 +104,12 @@ def test_run_after_staging_replacement_is_rejected_without_verdict(
         headers=api_headers,
     )
     assert first.status_code == 200
-    run = client.post("/runs", headers=api_headers)
-    assert run.status_code == 409
+    with pytest.raises(services.StaleStagedError):
+        services.run_current_checks(
+            intake=make_engine(pg_dsns["intake"]),
+            read_dsn=pg_dsns["read"],
+            _suite_runner=_suite_with_interleaved_upload,
+        )
     engine = make_engine(pg_dsns["admin"])
     with engine.connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM wb.case_verdicts")).scalar() == 0

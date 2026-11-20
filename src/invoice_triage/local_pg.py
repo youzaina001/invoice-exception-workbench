@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pgserver
-from airflow_dq_agent.warehouse.db import make_engine
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 
 def postgres_binary(name: str) -> str:
@@ -126,7 +125,7 @@ class LocalPostgres:
         )
 
     def ensure_database(self, name: str) -> None:
-        engine = make_engine(self.dsn(db="postgres"))
+        engine = create_engine(self.dsn(db="postgres"), future=True, pool_pre_ping=True)
         with engine.connect() as conn:
             exists = conn.execute(
                 text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name}

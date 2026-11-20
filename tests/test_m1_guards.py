@@ -66,7 +66,7 @@ def test_duplicate_ingest_and_rerun_keep_single_case(
 def test_errored_check_opens_case_and_blocks_resolve(
     client: TestClient,
     api_headers: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
+    pg_dsns: dict[str, str],
 ) -> None:
     """A required check that errors must still open a case with a verdict."""
     import polars as pl
@@ -75,14 +75,13 @@ def test_errored_check_opens_case_and_blocks_resolve(
     import invoice_triage.services as services
 
     _ingest(client, api_headers, "missing_amount.csv")
-    monkeypatch.setattr(
-        services,
-        "run_quality_suite",
-        lambda dsn: run_suite_on_frames(
+    run = services.run_current_checks(
+        intake=make_engine(pg_dsns["intake"]),
+        read_dsn=pg_dsns["read"],
+        _suite_runner=lambda _dsn: run_suite_on_frames(
             {"staging_invoice": pl.DataFrame({"invoice_ref": ["INV-001"]})}
         ),
     )
-    run = _run(client, api_headers)
     assert run["status"] == "error"
     assert run["case_id"] is not None
     case_id = str(run["case_id"])

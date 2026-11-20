@@ -8,18 +8,18 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
 
-from airflow_dq_agent.warehouse.db import make_engine
 from fastapi import FastAPI, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from starlette.datastructures import UploadFile as FormUploadFile
 
 from invoice_triage import pdf_intake
 from invoice_triage.auth import verified_reviewer
 from invoice_triage.extraction import Fields, load_json
+from invoice_triage.governance import CheckMissingError, configure_governance
 from invoice_triage.request_scope import (
-    activate_connection_scope,
     bind_scope,
     current_attempt,
     install_scope,
@@ -31,7 +31,6 @@ from invoice_triage.services import (
     AttemptNotFoundError,
     AttemptReadOnlyError,
     CaseNotFoundError,
-    CheckMissingError,
     NothingStagedError,
     StaleStagedError,
     ensure_demo_workspace,
@@ -267,15 +266,19 @@ def create_app(
     *,
     authenticate: Callable[[Request], str | None] = verified_reviewer,
 ) -> FastAPI:
-    activate_connection_scope()
+    configure_governance(scope_installer=install_scope)
     resolved = settings or Settings()
     app = FastAPI(title="Invoice Triage", lifespan=lifespan)
     app.state.settings = resolved
     app.state.intake_engine = (
-        make_engine(resolved.intake_dsn) if resolved.intake_dsn else None
+        create_engine(resolved.intake_dsn, future=True, pool_pre_ping=True)
+        if resolved.intake_dsn
+        else None
     )
     app.state.audit_engine = (
-        make_engine(resolved.audit_dsn) if resolved.audit_dsn else None
+        create_engine(resolved.audit_dsn, future=True, pool_pre_ping=True)
+        if resolved.audit_dsn
+        else None
     )
     for engine in (app.state.intake_engine, app.state.audit_engine):
         if engine is not None:

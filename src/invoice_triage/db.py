@@ -8,9 +8,8 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass
 
-from airflow_dq_agent.adoption import login_dsn
-from airflow_dq_agent.warehouse.db import make_engine
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine, make_url
 
 INTAKE_LOGIN = "wb_intake"
 
@@ -366,13 +365,25 @@ class IntakeCredentials:
     intake_dsn: str
 
 
+def _make_engine(dsn: str) -> Engine:
+    return create_engine(dsn, future=True, pool_pre_ping=True)
+
+
+def _login_dsn(admin_dsn: str, *, user: str, password: str) -> str:
+    return (
+        make_url(admin_dsn)
+        .set(username=user, password=password)
+        .render_as_string(hide_password=False)
+    )
+
+
 def setup_database(admin_dsn: str) -> IntakeCredentials:
     """Create the intake role and companion tables.
 
     Setup-only; never called at runtime.
     """
     password = secrets.token_hex(16)
-    admin = make_engine(admin_dsn)
+    admin = _make_engine(admin_dsn)
     with admin.begin() as connection:
         exists = connection.execute(
             text("SELECT 1 FROM pg_roles WHERE rolname = :login"),
@@ -408,8 +419,8 @@ def setup_database(admin_dsn: str) -> IntakeCredentials:
         connection.execute(
             text(f"CREATE SCHEMA IF NOT EXISTS wb AUTHORIZATION {quoted['ident']}")
         )
-    intake_dsn = login_dsn(admin_dsn, user=INTAKE_LOGIN, password=password)
-    with make_engine(intake_dsn).begin() as connection:
+    intake_dsn = _login_dsn(admin_dsn, user=INTAKE_LOGIN, password=password)
+    with _make_engine(intake_dsn).begin() as connection:
         connection.execute(text(TABLES_DDL))
         connection.execute(text(SCOPED_DDL))
         connection.execute(text(LOCAL_PDF_DDL))

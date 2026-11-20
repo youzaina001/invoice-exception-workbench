@@ -94,24 +94,3 @@ def install_scope(engine: Engine) -> None:
     event.listen(engine, "commit", _clear_scope_flag)
     event.listen(engine, "rollback", _clear_scope_flag)
     event.listen(engine, "before_cursor_execute", _apply_scope)
-
-
-def activate_connection_scope() -> None:
-    """Stamp Reviewer settings on engines the quality core opens itself."""
-    import airflow_dq_agent.quality.suite as suite
-    import airflow_dq_agent.traces.writer as writer
-    import airflow_dq_agent.warehouse.db as warehouse_db
-
-    if getattr(warehouse_db.make_engine, "_ledgerlens_scoped", False):
-        return
-    original = warehouse_db.make_engine
-
-    def make_engine(dsn: str | None = None) -> Engine:
-        engine = original(dsn)
-        install_scope(engine)
-        return engine
-
-    setattr(make_engine, "_ledgerlens_scoped", True)
-    setattr(warehouse_db, "make_engine", make_engine)
-    setattr(suite, "make_engine", make_engine)
-    setattr(writer, "make_engine", make_engine)
