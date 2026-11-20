@@ -574,8 +574,11 @@ def test_unchanged_values_preserve_duplicate_history_after_review(
         engine.dispose()
 
 
+# A proxy or mount prefix moves request.url.path off "/pdf-drafts", so the
+# middleware path check misses it; the handlers must still refuse.
+@pytest.mark.parametrize("prefix", ["", "/api"])
 def test_hosted_pdf_routes_refuse_before_workspace_or_pdf_write(
-    pg_dsns: dict[str, str],
+    pg_dsns: dict[str, str], prefix: str
 ) -> None:
     settings = Settings(
         hosted=True,
@@ -583,21 +586,23 @@ def test_hosted_pdf_routes_refuse_before_workspace_or_pdf_write(
         read_dsn=pg_dsns["read"],
         audit_dsn=pg_dsns["audit"],
     )
-    with TestClient(create_app(settings, authenticate=signed_in_reviewer)) as client:
+    app = create_app(settings, authenticate=signed_in_reviewer)
+    with TestClient(app, root_path=prefix) as client:
         for reviewer in (None, "signed-in-reviewer"):
             headers = (
                 HEADERS if reviewer is None else {**HEADERS, "X-Reviewer": reviewer}
             )
+            base = f"{prefix}/pdf-drafts"
             requests: list[tuple[str, str, dict[str, Any]]] = [
-                ("POST", "/pdf-drafts", {"files": {"file": ("a.pdf", b"bad")}}),
-                ("GET", "/pdf-drafts/unknown", {}),
-                ("GET", "/pdf-drafts/unknown/source", {}),
-                ("POST", "/pdf-drafts/unknown/edit", {"json": {}}),
-                ("POST", "/pdf-drafts/unknown/confirm", {"json": {}}),
-                ("POST", "/pdf-drafts/unknown/intake", {"json": {}}),
+                ("POST", base, {"files": {"file": ("a.pdf", b"bad")}}),
+                ("GET", f"{base}/unknown", {}),
+                ("GET", f"{base}/unknown/source", {}),
+                ("POST", f"{base}/unknown/edit", {"json": {}}),
+                ("POST", f"{base}/unknown/confirm", {"json": {}}),
+                ("POST", f"{base}/unknown/intake", {"json": {}}),
                 (
                     "POST",
-                    "/pdf-drafts/unknown/source",
+                    f"{base}/unknown/source",
                     {"files": {"file": ("b.pdf", b"bad")}},
                 ),
             ]

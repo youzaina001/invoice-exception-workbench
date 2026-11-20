@@ -1,7 +1,7 @@
 {
   "version": "1",
   "manifest_sha256": "d516d7989b8b980ca0fb8c321fabf30e33b4bbfa8fe913fca67c6d1f380bcfc2",
-  "code_sha256": "b5aac309db6b89b2a3cc710dc97daefb1de2ea38fb5ce3d1956b7b6979a5e036",
+  "code_sha256": "6b76fac79682ad313b0ac5834cd6a12544aa013420d1c24e05e807481a4e3a06",
   "core_revision": "5d602428a93e5eee733b4ed1ffd06af4cbba250b",
   "policy": "confirm-unchanged-then-declared-source-replacement-v1",
   "expected": {

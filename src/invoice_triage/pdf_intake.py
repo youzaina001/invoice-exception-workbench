@@ -67,6 +67,12 @@ class _SavedExtraction(StrictModel):
         }
 
 
+def _require_local(scope: ExecutionScope | None) -> None:
+    """Refuse hosted scopes before parsing input or opening a transaction."""
+    if scope is not None and scope.hosted:
+        raise PermissionError("PDF review is available locally only")
+
+
 def _json(value: Any) -> str:
     return canonical(value).decode()
 
@@ -293,8 +299,7 @@ def create_draft(
     scope: ExecutionScope | None = None,
 ) -> dict[str, Any]:
     """Store a local PDF source and create its initial review draft."""
-    if scope is not None and scope.hosted:
-        raise PermissionError("PDF review is available locally only")
+    _require_local(scope)
     parsed_extraction = (
         _decode_saved_extraction(extraction) if extraction is not None else None
     )
@@ -377,6 +382,7 @@ def edit_draft(
     scope: ExecutionScope | None = None,
 ) -> dict[str, Any]:
     """Record a new reviewed revision for a local PDF draft."""
+    _require_local(scope)
     resolved_revision = _parse_revision(revision, payload)
     resolved_fields = _parse_edit_fields(fields, payload, form=form)
     with scoped_transaction(engine, scope, mutate=True, local_only=True) as conn:
@@ -411,8 +417,7 @@ def replace_source(
     scope: ExecutionScope | None = None,
 ) -> dict[str, Any]:
     """Attach a replacement PDF source to a local draft as a new revision."""
-    if scope is not None and scope.hosted:
-        raise PermissionError("PDF review is available locally only")
+    _require_local(scope)
     resolved_revision = _parse_revision(revision, payload)
     source = _source(data, filename)
     with scoped_transaction(engine, scope, mutate=True, local_only=True) as conn:
@@ -468,6 +473,7 @@ def confirm_draft(
     scope: ExecutionScope | None = None,
 ) -> dict[str, Any]:
     """Explicitly confirm the active PDF source and reviewed fields."""
+    _require_local(scope)
     resolved_revision = _parse_revision(revision, payload)
     resolved_binding = _parse_binding(binding, payload)
     resolved_reviewed = _parse_reviewed_fields(reviewed_fields, payload, form=form)
@@ -503,6 +509,7 @@ def intake_draft(
     scope: ExecutionScope | None = None,
 ) -> dict[str, object]:
     """Submit a confirmed PDF draft into submission history and singleton staging."""
+    _require_local(scope)
     resolved_revision = _parse_revision(revision, payload)
     resolved_binding = _parse_binding(binding, payload)
     resolved_reviewed = _parse_reviewed_fields(reviewed_fields, payload, form=form)

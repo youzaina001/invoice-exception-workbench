@@ -109,9 +109,13 @@ def _pdf_render(request: Request, draft: dict[str, Any], status: int = 200) -> R
     )
 
 
-def _pdf_error(request: Request, exc: ValueError | LookupError) -> Response:
+def _pdf_error(
+    request: Request, exc: ValueError | LookupError | PermissionError
+) -> Response:
     status = (
-        409
+        403
+        if isinstance(exc, PermissionError)
+        else 409
         if isinstance(exc, pdf_intake.PDFConflict)
         else 404
         if isinstance(exc, LookupError)
@@ -131,6 +135,18 @@ async def _pdf_payload(request: Request) -> tuple[dict[str, Any], bool]:
 
 def _reviewer_id(request: Request) -> str | None:
     return cast(str | None, getattr(request.state, "reviewer", None))
+
+
+def _pdf_scope(request: Request) -> ExecutionScope:
+    """Carry hosted mode into pdf_intake, which refuses it (local only).
+
+    The middleware path check misses prefixed paths (proxy or mount), so the
+    handlers must not fall back to a local scope on a hosted deployment.
+    """
+    settings: Settings = request.app.state.settings
+    if not settings.hosted:
+        return ExecutionScope.local()
+    return ExecutionScope(hosted=True, reviewer_id=_reviewer_id(request))
 
 
 def _unsigned_response(request: Request) -> Response | None:
@@ -309,8 +325,9 @@ def create_app(
                 filename=file.filename or "upload.pdf",
                 data=data,
                 extraction=extraction_data,
+                scope=_pdf_scope(request),
             )
-        except ValueError as exc:
+        except (ValueError, PermissionError) as exc:
             return _pdf_error(request, exc)
         if wants_json(request):
             return _pdf_render(request, draft, 201)
@@ -320,16 +337,17 @@ def create_app(
     def view_pdf(request: Request, draft_id: str) -> Response:
         intake, _, _ = _engines(request.app)
         try:
-            return _pdf_render(request, pdf_intake.read_draft(intake, draft_id))
-        except LookupError as exc:
+            draft = pdf_intake.read_draft(intake, draft_id, scope=_pdf_scope(request))
+            return _pdf_render(request, draft)
+        except (LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
 
     @app.get("/pdf-drafts/{draft_id}/source")
     def pdf_source(request: Request, draft_id: str) -> Response:
         intake, _, _ = _engines(request.app)
         try:
-            data = pdf_intake.read_source(intake, draft_id)
-        except LookupError as exc:
+            data = pdf_intake.read_source(intake, draft_id, scope=_pdf_scope(request))
+        except (LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         return Response(
             data,
@@ -347,9 +365,13 @@ def create_app(
         try:
             payload, is_form = await _pdf_payload(request)
             draft = pdf_intake.edit_draft(
-                intake, draft_id, payload=payload, form=is_form
+                intake,
+                draft_id,
+                payload=payload,
+                form=is_form,
+                scope=_pdf_scope(request),
             )
-        except (ValueError, LookupError) as exc:
+        except (ValueError, LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         return _pdf_render(request, draft)
 
@@ -370,8 +392,9 @@ def create_app(
                 filename=file.filename or "upload.pdf",
                 data=data,
                 payload=payload,
+                scope=_pdf_scope(request),
             )
-        except (ValueError, LookupError) as exc:
+        except (ValueError, LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         return _pdf_render(request, draft)
 
@@ -381,9 +404,13 @@ def create_app(
         try:
             payload, is_form = await _pdf_payload(request)
             draft = pdf_intake.confirm_draft(
-                intake, draft_id, payload=payload, form=is_form
+                intake,
+                draft_id,
+                payload=payload,
+                form=is_form,
+                scope=_pdf_scope(request),
             )
-        except (ValueError, LookupError) as exc:
+        except (ValueError, LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         return _pdf_render(request, draft)
 
@@ -393,9 +420,13 @@ def create_app(
         try:
             payload, is_form = await _pdf_payload(request)
             submission = pdf_intake.intake_draft(
-                intake, draft_id, payload=payload, form=is_form
+                intake,
+                draft_id,
+                payload=payload,
+                form=is_form,
+                scope=_pdf_scope(request),
             )
-        except (ValueError, LookupError) as exc:
+        except (ValueError, LookupError, PermissionError) as exc:
             return _pdf_error(request, exc)
         if wants_json(request):
             return JSONResponse(submission)
