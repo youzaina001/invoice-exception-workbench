@@ -34,8 +34,20 @@ def test_documented_schema_command_runs() -> None:
     assert schemas["eligibility"]["type"] == "object"
 
 
-def test_documented_request_identity_functions_are_public() -> None:
-    from invoice_triage import model_runner
+def test_documented_offline_request_identity_matches_frozen_slots(
+    tmp_path: Path,
+) -> None:
+    from test_model_runner import frozen_inputs
 
-    for name in ("Plan", "Eligibility", "request_payload", "canonical", "digest"):
-        assert callable(getattr(model_runner, name, None)), name
+    from invoice_triage.extraction import canonical, digest
+    from invoice_triage.model_runner import Eligibility, Plan, request_payload
+    from invoice_triage.pdf_text import PDFText, read_pdf
+
+    plan_path, receipt_path, pdfs = frozen_inputs(tmp_path)
+    plan = Plan.model_validate_json(plan_path.read_text())
+    receipt = Eligibility.model_validate_json(receipt_path.read_text())
+    for slot in plan.slots:
+        pdf = read_pdf(pdfs[slot.id].read_bytes())
+        assert isinstance(pdf, PDFText), slot.id
+        identity = digest(canonical(request_payload(plan, receipt, pdf.text)))
+        assert identity == slot.request_sha256, slot.id
