@@ -1,15 +1,9 @@
-"""M1 slice: ingest submissions, run checks, present cases. Synchronous by design."""
+"""M1 slice: run checks, present cases, and resolve exceptions."""
 
 from __future__ import annotations
 
-import csv
-import hashlib
-import io
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import date
-from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any
 from uuid import uuid4
 
@@ -21,10 +15,10 @@ from invoice_triage.governance import (
     execute_amount_check,
     read_audit_lineage,
 )
+from invoice_triage.intake import current_staged, read_submission_history
 from invoice_triage.request_scope import (
     AttemptReadOnlyError,
     ExecutionScope,
-    acquire_staging_lock,
     scoped_transaction,
 )
 from invoice_triage.resolution import (
@@ -32,8 +26,6 @@ from invoice_triage.resolution import (
     ResolutionRequest,
     decide_resolution,
 )
-
-REQUIRED_COLUMNS = ("invoice_id", "supplier_id", "invoice_date", "currency", "amount")
 
 
 class NothingStagedError(RuntimeError):
@@ -48,368 +40,10 @@ class CaseNotFoundError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True)
-class InvoiceRow:
-    invoice_id: str
-    supplier_id: str
-    invoice_date: date
-    currency: str
-    amount_minor: int | None
-
-
-def parse_submission_csv(data: bytes, *, filename: str) -> InvoiceRow:
-    try:
-        decoded = data.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise ValueError(f"{filename}: file must be UTF-8 CSV") from exc
-    reader = csv.DictReader(io.StringIO(decoded))
-    if reader.fieldnames != list(REQUIRED_COLUMNS):
-        raise ValueError(f"{filename}: expected header {','.join(REQUIRED_COLUMNS)}")
-    rows = []
-    for record in reader:
-        if record.get(None):
-            raise ValueError(f"{filename}: expected 5 columns, found extra fields")
-        if any((cell or "").strip() for cell in record.values()):
-            rows.append(record)
-    if len(rows) != 1:
-        raise ValueError(f"{filename}: M1 supports exactly one invoice per submission")
-    row = rows[0]
-    invoice_id = (row["invoice_id"] or "").strip()
-    supplier_id = (row["supplier_id"] or "").strip()
-    currency = (row["currency"] or "").strip()
-    if not invoice_id or not supplier_id or not currency:
-        raise ValueError(
-            f"{filename}: invoice_id, supplier_id, and currency are required"
-        )
-    try:
-        invoice_date = date.fromisoformat((row["invoice_date"] or "").strip())
-    except ValueError as exc:
-        raise ValueError(f"{filename}: invoice_date must be YYYY-MM-DD") from exc
-    raw_amount = (row["amount"] or "").strip()
-    amount_minor = parse_amount_minor(raw_amount, filename=filename)
-    return InvoiceRow(
-        invoice_id=invoice_id,
-        supplier_id=supplier_id,
-        invoice_date=invoice_date,
-        currency=currency,
-        amount_minor=amount_minor,
-    )
-
-
-def parse_amount_minor(raw_amount: str, *, filename: str) -> int | None:
-    if not raw_amount:
-        amount_minor: int | None = None
-    else:
-        try:
-            amount = Decimal(raw_amount)
-        except InvalidOperation as exc:
-            raise ValueError(
-                f"{filename}: amount {raw_amount!r} is not decimal"
-            ) from exc
-        if not amount.is_finite():
-            raise ValueError(f"{filename}: amount {raw_amount!r} is not finite")
-        if amount < 0 or amount > Decimal("92233720368547758.07"):
-            raise ValueError(f"{filename}: amount is outside the supported range")
-        # Reject on scale, not on a rounded product: the default decimal
-        # context would otherwise round long inputs into an accepted value.
-        exponent = amount.as_tuple().exponent
-        if not isinstance(exponent, int) or exponent < -2:
-            raise ValueError(
-                f"{filename}: amount {raw_amount!r} has sub-cent precision"
-            )
-        with localcontext() as ctx:
-            ctx.prec = max(len(raw_amount), 28) + 2
-            cents = amount * 100
-            if cents != cents.to_integral_value():
-                raise ValueError(
-                    f"{filename}: amount {raw_amount!r} has sub-cent precision"
-                )
-        amount_minor = int(cents)
-        if amount_minor < 0:
-            raise ValueError(f"{filename}: amount must not be negative")
-        if amount_minor > 9_223_372_036_854_775_807:
-            raise ValueError(
-                f"{filename}: amount {raw_amount!r} exceeds supported range"
-            )
-    return amount_minor
-
-
-def snapshot_row(row: InvoiceRow) -> str:
-    canonical = json.dumps(
-        {
-            "invoice_id": row.invoice_id,
-            "supplier_id": row.supplier_id,
-            "invoice_date": row.invoice_date.isoformat(),
-            "currency": row.currency,
-            "amount_minor": row.amount_minor,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(canonical.encode()).hexdigest()
-
-
-def _submission_payload(
-    submission_id: str,
-    invoice_ref: str,
-    version: int,
-    duplicate: bool,
-    made_current: bool,
-) -> dict[str, object]:
-    return {
-        "submission_id": submission_id,
-        "invoice_ref": invoice_ref,
-        "version": version,
-        "duplicate": duplicate,
-        "made_current": made_current,
-    }
-
-
 def _attempt_sql(attempt: str | None) -> tuple[str, dict[str, str]]:
     if attempt is None:
         return "", {}
     return " AND attempt_id = :attempt", {"attempt": attempt}
-
-
-def _replace_staging(
-    conn: Connection,
-    *,
-    invoice_ref: str,
-    submission_id: str,
-    version: int,
-    row: InvoiceRow,
-    snapshot: str,
-    attempt_id: str | None = None,
-) -> None:
-    """Replace the singleton staging projection with one submission.
-
-    The caller must hold the staging advisory lock: every staging write
-    runs inside the ingest transaction, which takes it first.
-    """
-    # Staging holds exactly the current submission, so the suite verdict
-    # can never mix rows from other invoices or versions.
-    if attempt_id is None:
-        conn.execute(text("DELETE FROM wb.staging_invoice"))
-    else:
-        conn.execute(
-            text("DELETE FROM wb.staging_invoice WHERE attempt_id = :attempt"),
-            {"attempt": attempt_id},
-        )
-    conn.execute(
-        text(
-            "INSERT INTO wb.staging_invoice"
-            " (invoice_ref, submission_id, version, invoice_id, supplier_id,"
-            " invoice_date, currency, amount_minor, snapshot)"
-            " VALUES (:ref, :sid, :ver, :iid, :sup, :dt, :cur, :amt, :snap)"
-        ),
-        {
-            "ref": invoice_ref,
-            "sid": submission_id,
-            "ver": version,
-            "iid": row.invoice_id,
-            "sup": row.supplier_id,
-            "dt": row.invoice_date,
-            "cur": row.currency,
-            "amt": row.amount_minor,
-            "snap": snapshot,
-        },
-    )
-
-
-def _restage_if_latest(
-    conn: Connection,
-    invoice_ref: str,
-    submission_id: str,
-    version: int,
-    *,
-    attempt_id: str | None = None,
-) -> bool:
-    """Restage a duplicate upload when it is the invoice's latest version.
-
-    History is untouched (no new version); only the singleton staging
-    projection moves. Returns True when the submission became current.
-    """
-    extra, extra_params = _attempt_sql(attempt_id)
-    latest = (
-        conn.execute(
-            text(
-                "SELECT id FROM wb.submissions WHERE invoice_ref = :ref"
-                + extra
-                + " ORDER BY version DESC LIMIT 1"
-            ),
-            {"ref": invoice_ref, **extra_params},
-        )
-        .mappings()
-        .first()
-    )
-    if latest is None or str(latest["id"]) != submission_id:
-        return False
-    stored = (
-        conn.execute(
-            text(
-                "SELECT invoice_id, supplier_id, invoice_date, currency,"
-                " amount_minor FROM wb.submission_rows"
-                " WHERE submission_id = :sid"
-            ),
-            {"sid": submission_id},
-        )
-        .mappings()
-        .first()
-    )
-    if stored is None:
-        return False
-    row = InvoiceRow(
-        invoice_id=str(stored["invoice_id"]),
-        supplier_id=str(stored["supplier_id"]),
-        invoice_date=stored["invoice_date"],
-        currency=str(stored["currency"]),
-        amount_minor=stored["amount_minor"],
-    )
-    _replace_staging(
-        conn,
-        invoice_ref=invoice_ref,
-        submission_id=submission_id,
-        version=version,
-        row=row,
-        snapshot=snapshot_row(row),
-        attempt_id=attempt_id,
-    )
-    return True
-
-
-def ingest_submission(
-    engine: Engine,
-    *,
-    filename: str,
-    data: bytes,
-    scope: ExecutionScope | None = None,
-) -> dict[str, object]:
-    resolved = scope or ExecutionScope.local()
-    if resolved.is_read_only_attempt:
-        raise AttemptReadOnlyError("attempt-read-only")
-    row = parse_submission_csv(data, filename=filename)
-    content_hash = hashlib.sha256(data).hexdigest()
-    with scoped_transaction(engine, resolved, mutate=True, lock_staging=True) as conn:
-        return ingest_invoice_row(
-            conn, filename=filename, row=row, content_hash=content_hash, scope=resolved
-        )
-
-
-def ingest_invoice_row(
-    conn: Connection,
-    *,
-    filename: str,
-    row: InvoiceRow,
-    content_hash: str,
-    scope: ExecutionScope | None = None,
-) -> dict[str, object]:
-    """Store a validated row in the caller's transaction and existing staging lock."""
-    resolved = scope or ExecutionScope.local()
-    invoice_ref = row.invoice_id
-    snapshot = snapshot_row(row)
-    acquire_staging_lock(conn)
-    extra, extra_params = _attempt_sql(resolved.attempt_id)
-    existing = (
-        conn.execute(
-            text(
-                "SELECT id, version FROM wb.submissions"
-                " WHERE invoice_ref = :ref AND content_hash = :hash" + extra
-            ),
-            {"ref": invoice_ref, "hash": content_hash, **extra_params},
-        )
-        .mappings()
-        .first()
-    )
-    if existing is not None:
-        made_current = _restage_if_latest(
-            conn,
-            invoice_ref,
-            str(existing["id"]),
-            int(existing["version"]),
-            attempt_id=resolved.attempt_id,
-        )
-        return _submission_payload(
-            str(existing["id"]),
-            invoice_ref,
-            int(existing["version"]),
-            True,
-            made_current,
-        )
-    prior = (
-        conn.execute(
-            text(
-                "SELECT COALESCE(MAX(version), 0) AS max_version"
-                " FROM wb.submissions WHERE invoice_ref = :ref" + extra
-            ),
-            {"ref": invoice_ref, **extra_params},
-        )
-        .mappings()
-        .first()
-    )
-    version = int(prior["max_version"]) + 1 if prior else 1
-    submission_id = uuid4().hex
-    conn.execute(
-        text(
-            "INSERT INTO wb.submissions"
-            " (id, invoice_ref, version, content_hash, filename)"
-            " VALUES (:id, :ref, :version, :hash, :filename)"
-        ),
-        {
-            "id": submission_id,
-            "ref": invoice_ref,
-            "version": version,
-            "hash": content_hash,
-            "filename": filename,
-        },
-    )
-    conn.execute(
-        text(
-            "INSERT INTO wb.submission_rows"
-            " (submission_id, invoice_id, supplier_id, invoice_date,"
-            " currency, amount_minor)"
-            " VALUES (:sid, :iid, :sup, :dt, :cur, :amt)"
-        ),
-        {
-            "sid": submission_id,
-            "iid": row.invoice_id,
-            "sup": row.supplier_id,
-            "dt": row.invoice_date,
-            "cur": row.currency,
-            "amt": row.amount_minor,
-        },
-    )
-    _replace_staging(
-        conn,
-        invoice_ref=invoice_ref,
-        submission_id=submission_id,
-        version=version,
-        row=row,
-        snapshot=snapshot,
-        attempt_id=resolved.attempt_id,
-    )
-    return _submission_payload(submission_id, invoice_ref, version, False, True)
-
-
-def _current_staged(
-    conn: Connection,
-    invoice_ref: str | None = None,
-    *,
-    attempt_id: str | None = None,
-) -> RowMapping | None:
-    query = (
-        "SELECT invoice_ref, submission_id, version, snapshot FROM wb.staging_invoice"
-    )
-    clauses: list[str] = []
-    params: dict[str, str] = {}
-    if invoice_ref is not None:
-        clauses.append("invoice_ref = :ref")
-        params["ref"] = invoice_ref
-    if attempt_id is not None:
-        clauses.append("attempt_id = :attempt")
-        params["attempt"] = attempt_id
-    if clauses:
-        query += " WHERE " + " AND ".join(clauses)
-    return conn.execute(text(query + " LIMIT 1"), params).mappings().first()
 
 
 def run_current_checks(
@@ -423,7 +57,7 @@ def run_current_checks(
     # ponytail: serialize the singleton staging journey; use per-invoice
     # staging and locks if simultaneous invoice checks become necessary.
     with scoped_transaction(intake, resolved, mutate=True, lock_staging=True) as conn:
-        staged = _current_staged(conn, attempt_id=resolved.attempt_id)
+        staged = current_staged(conn, attempt_id=resolved.attempt_id)
         if staged is None:
             raise NothingStagedError("no submission staged; ingest a CSV first")
         invoice_ref = str(staged["invoice_ref"])
@@ -432,7 +66,7 @@ def run_current_checks(
         snapshot = str(staged["snapshot"])
         checked = execute_amount_check(read_dsn, _suite_runner=_suite_runner)
         status = checked.status
-        if _current_staged(conn, attempt_id=resolved.attempt_id) != staged:
+        if current_staged(conn, attempt_id=resolved.attempt_id) != staged:
             raise StaleStagedError("staging changed during the check run; rerun checks")
         extra, extra_params = _attempt_sql(resolved.attempt_id)
         case_row = (
@@ -514,16 +148,6 @@ def run_current_checks(
         }
 
 
-def _row_dict(row: RowMapping) -> dict[str, object]:
-    return {
-        "invoice_id": str(row["invoice_id"]),
-        "supplier_id": str(row["supplier_id"]),
-        "invoice_date": row["invoice_date"].isoformat(),
-        "currency": str(row["currency"]),
-        "amount_minor": row["amount_minor"],
-    }
-
-
 def get_case_detail(
     *,
     intake: Engine,
@@ -562,46 +186,24 @@ def get_case_detail(
         )
         if verdict is None:
             raise CaseNotFoundError(f"case {case_id} has no verdict")
-        stored = (
-            conn.execute(
-                text(
-                    "SELECT invoice_id, supplier_id, invoice_date, currency,"
-                    " amount_minor"
-                    " FROM wb.submission_rows WHERE submission_id = :sid"
-                ),
-                {"sid": str(verdict["submission_id"])},
-            )
-            .mappings()
-            .first()
-        )
-        if stored is None:
-            raise CaseNotFoundError(f"case {case_id} evidence missing")
-        history_sql = (
-            "SELECT m.version, m.id, r.invoice_id, r.supplier_id,"
-            " r.invoice_date, r.currency, r.amount_minor,"
-            " (SELECT p.fields #>> '{amount_minor,state}'"
-            " FROM wb.pdf_intakes i JOIN wb.pdf_revisions p"
-            " ON p.draft_id = i.draft_id AND p.revision = i.revision"
-            " WHERE i.submission_id = m.id LIMIT 1) AS amount_state"
-            " FROM wb.submissions m"
-            " JOIN wb.submission_rows r ON r.submission_id = m.id"
-            " WHERE m.invoice_ref = :ref"
-        )
-        history_params: dict[str, str] = {"ref": str(case["invoice_ref"])}
         case_attempt = (
             str(case["attempt_id"]) if case["attempt_id"] is not None else None
         )
-        if case_attempt is not None:
-            history_sql += " AND m.attempt_id = :attempt"
-            history_params["attempt"] = case_attempt
-        history_rows = (
-            conn.execute(text(history_sql + " ORDER BY m.version"), history_params)
-            .mappings()
-            .all()
+        history_submissions = read_submission_history(
+            conn, invoice_ref=str(case["invoice_ref"]), attempt_id=case_attempt
         )
-        amount_states = {str(h["id"]): h["amount_state"] for h in history_rows}
-        current = _current_staged(
-            conn, str(case["invoice_ref"]), attempt_id=case_attempt
+        checked_entry = next(
+            (
+                entry
+                for entry in history_submissions
+                if entry["submission_id"] == str(verdict["submission_id"])
+            ),
+            None,
+        )
+        if checked_entry is None:
+            raise CaseNotFoundError(f"case {case_id} evidence missing")
+        current = current_staged(
+            conn, invoice_ref=str(case["invoice_ref"]), attempt_id=case_attempt
         )
         source_version: int = conn.execute(
             text("SELECT version FROM wb.submissions WHERE id = :id"),
@@ -637,8 +239,8 @@ def get_case_detail(
         "run_id": str(verdict["run_id"]),
         "report_id": str(verdict["report_id"]),
         "verdict": str(verdict["status"]),
-        "row": _row_dict(stored),
-        "amount_state": amount_states[str(verdict["submission_id"])],
+        "row": checked_entry["row"],
+        "amount_state": checked_entry["amount_state"],
         "core": {
             "n_failed": verdict["n_failed"],
             "n_total": verdict["n_total"],
@@ -648,15 +250,7 @@ def get_case_detail(
         "audit": audit_view.labels,
         "history": {
             "audit": audit_view.events,
-            "submissions": [
-                {
-                    "version": int(h["version"]),
-                    "submission_id": str(h["id"]),
-                    "row": _row_dict(h),
-                    "amount_state": h["amount_state"],
-                }
-                for h in history_rows
-            ],
+            "submissions": history_submissions,
             "verdicts": [
                 {
                     "version": int(v["version"]),
@@ -692,7 +286,9 @@ def _refused_after_race(
     )
     if case is None:
         raise CaseNotFoundError(f"case {case_id} not found")
-    current = _current_staged(conn, str(case["invoice_ref"]), attempt_id=attempt_id)
+    current = current_staged(
+        conn, invoice_ref=str(case["invoice_ref"]), attempt_id=attempt_id
+    )
     decision = _resolution_decision(case, verdict, current, True)
     return {
         "case_id": case_id,
@@ -769,8 +365,8 @@ def resolve_case(
             .mappings()
             .first()
         )
-        current = _current_staged(
-            conn, str(case["invoice_ref"]), attempt_id=resolved.attempt_id
+        current = current_staged(
+            conn, invoice_ref=str(case["invoice_ref"]), attempt_id=resolved.attempt_id
         )
         audit_view = (
             read_audit_lineage(audit, latest_verdict=verdict)

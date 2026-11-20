@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS wb.submission_rows (
     supplier_id TEXT NOT NULL,
     invoice_date DATE NOT NULL,
     currency TEXT NOT NULL,
-    amount_minor BIGINT NULL
+    amount_minor BIGINT NULL,
+    amount_state TEXT NULL
 );
 CREATE TABLE IF NOT EXISTS wb.staging_invoice (
     invoice_ref TEXT PRIMARY KEY,
@@ -91,7 +92,8 @@ ALTER TABLE wb.submissions
     ADD COLUMN IF NOT EXISTS attempt_id TEXT;
 ALTER TABLE wb.submission_rows
     ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
-    ADD COLUMN IF NOT EXISTS attempt_id TEXT;
+    ADD COLUMN IF NOT EXISTS attempt_id TEXT,
+    ADD COLUMN IF NOT EXISTS amount_state TEXT NULL;
 ALTER TABLE wb.staging_invoice
     ADD COLUMN IF NOT EXISTS reviewer_id TEXT,
     ADD COLUMN IF NOT EXISTS attempt_id TEXT;

@@ -19,6 +19,7 @@ from invoice_triage import pdf_intake
 from invoice_triage.auth import verified_reviewer
 from invoice_triage.extraction import Fields, load_json
 from invoice_triage.governance import CheckMissingError, configure_governance
+from invoice_triage.intake import ingest_submission, parse_amount_minor
 from invoice_triage.request_scope import (
     AttemptNotFoundError,
     AttemptReadOnlyError,
@@ -33,8 +34,6 @@ from invoice_triage.services import (
     NothingStagedError,
     StaleStagedError,
     get_case_detail,
-    ingest_submission,
-    parse_amount_minor,
     resolve_case,
     run_current_checks,
 )

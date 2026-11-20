@@ -13,10 +13,10 @@ from sqlalchemy.engine import Connection, Engine
 
 from invoice_triage.deterministic import extract_fields
 from invoice_triage.extraction import Fields, Success, validate_result
+from invoice_triage.intake import InvoiceRow, ingest_invoice_row
 from invoice_triage.pdf_text import MAX_PDF_BYTES, PDFText, read_pdf
 from invoice_triage.request_scope import ExecutionScope, scoped_transaction
 from invoice_triage.saved_extraction import SavedExtraction
-from invoice_triage.services import InvoiceRow, ingest_invoice_row
 
 
 class PDFConflict(ValueError):
@@ -397,6 +397,7 @@ def intake_draft(
             filename=draft["filename"],
             row=row,
             content_hash=content_hash,
+            amount_state=fields.amount_minor.state,
             scope=scope,
         )
         conn.execute(

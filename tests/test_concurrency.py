@@ -33,7 +33,7 @@ def test_concurrent_ingests_keep_singleton_staging(
     serialization both uploads commit (2 rows); with the ingest lock the
     second upload waits and replaces the first (1 row).
     """
-    from invoice_triage.services import ingest_submission
+    from invoice_triage.intake import ingest_submission
 
     engine = make_engine(pg_dsns["intake"])
     barrier = threading.Barrier(2)
@@ -228,7 +228,8 @@ def test_check_keeps_staging_stable_through_core_read(
     """
     from concurrent.futures import ThreadPoolExecutor
 
-    from invoice_triage.services import ingest_submission, run_current_checks
+    from invoice_triage.intake import ingest_submission
+    from invoice_triage.services import run_current_checks
 
     client.post(
         "/ingest",
@@ -287,7 +288,8 @@ def test_resolution_keeps_staging_stable_until_commit(
     """Interleave intake after gate reads; HTTP alone cannot force this overlap."""
     from concurrent.futures import ThreadPoolExecutor
 
-    from invoice_triage.services import ingest_submission, resolve_case
+    from invoice_triage.intake import ingest_submission
+    from invoice_triage.services import resolve_case
 
     for name in ("missing_amount.csv", "corrected_amount.csv"):
         client.post(
