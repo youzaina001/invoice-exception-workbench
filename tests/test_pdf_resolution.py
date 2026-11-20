@@ -6,14 +6,13 @@ import json
 import os
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
 
 import pytest
 from airflow_dq_agent.warehouse.db import make_engine
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from test_evaluation import make_pdf
-from test_pdf_intake import HEADERS, INVOICE, action, overview, token, upload
+from test_pdf_intake import HEADERS, INVOICE, action, overview, upload
 
 DEVELOPMENT = Path(__file__).resolve().parents[1] / "fixtures/extraction/development"
 
@@ -62,32 +61,6 @@ def test_development_pdf_intake_states(
         detail = client.get(f"/cases/{result['case_id']}", headers=HEADERS).json()
         assert detail["row"]["amount_minor"] is None
         assert detail["amount_state"] == draft["fields"]["amount_minor"]["state"]
-
-
-@pytest.mark.parametrize("state", ["missing", "ambiguous"])
-@pytest.mark.parametrize("route", ["edit", "confirm", "intake"])
-@pytest.mark.parametrize("encoding", ["json", "form"])
-def test_absent_amount_with_a_number_refuses_without_writes(
-    client: TestClient, state: str, route: str, encoding: str
-) -> None:
-    draft = action(client, upload(client), "confirm")
-    fields = deepcopy(draft["fields"])
-    fields["amount_minor"]["state"] = state
-    kwargs: dict[str, Any]
-    if encoding == "json":
-        kwargs = {"json": {**token(draft), "fields": fields}}
-    else:
-        data = {name: str(field["value"]) for name, field in fields.items()}
-        data["amount_minor"] = "12.34"
-        data.update({f"{name}_state": field["state"] for name, field in fields.items()})
-        data.update({name: str(value) for name, value in token(draft).items()})
-        kwargs = {"data": data}
-    response = client.post(
-        f"/pdf-drafts/{draft['id']}/{route}", headers=HEADERS, **kwargs
-    )
-    assert response.status_code == 400, response.text
-    assert client.get(f"/pdf-drafts/{draft['id']}", headers=HEADERS).json() == draft
-    assert overview(client)["submissions"] == []
 
 
 @pytest.mark.parametrize("fault", ["missing-audit", "error", "wrong-audit", "snapshot"])

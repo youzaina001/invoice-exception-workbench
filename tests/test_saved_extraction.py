@@ -9,8 +9,19 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from test_evaluation import make_pdf
 from test_pdf_intake import HEADERS, INVOICE, action, overview, upload
+
+from invoice_triage import pdf_intake
+from invoice_triage.request_scope import install_scope, read_workspace_view
+
+
+def _scoped_engine(dsn: str) -> Engine:
+    engine = create_engine(dsn, future=True, pool_pre_ping=True)
+    install_scope(engine)
+    return engine
 
 
 def saved(source: bytes, raw: dict[str, Any]) -> bytes:
@@ -56,64 +67,82 @@ def test_saved_arm_is_distinct_and_requires_the_same_confirmation(
     )
 
 
-@pytest.mark.parametrize("fault", ["source", "extra", "duplicate", "span", "oversize"])
+@pytest.mark.parametrize(
+    "fault",
+    ["source", "extra", "duplicate", "span", "oversize", "non_object_null", "list"],
+)
 def test_invalid_saved_output_cannot_change_existing_intake(
-    client: TestClient, fault: str
+    pg_dsns: dict[str, str], fault: str
 ) -> None:
-    source = make_pdf([INVOICE])
-    draft = upload(client, source)
-    action(client, action(client, draft, "confirm"), "intake")
-    before = overview(client)
-    raw = json.loads(saved(source, draft["raw"]))
-    if fault == "source":
-        raw["source_sha256"] = "0" * 64
-    elif fault == "extra":
-        raw["confirmation"] = True
-    elif fault == "span":
-        raw["result"]["fields"]["amount_minor"]["evidence"] = [
-            {"page": 99, "start": 0, "end": 4}
-        ]
-    data = json.dumps(raw).encode()
-    if fault == "duplicate":
-        data = data[:-1] + b', "version":"1"}'
-    elif fault == "oversize":
-        data = b" " * (1024 * 1024 + 1)
-    response = client.post(
-        "/pdf-drafts",
-        headers=HEADERS,
-        files={
-            "file": ("source.pdf", source, "application/pdf"),
-            "extraction": ("saved.json", data, "application/json"),
-        },
-    )
-    assert response.status_code == 400
-    assert overview(client) == before
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        source = make_pdf([INVOICE])
+        draft = pdf_intake.create_draft(engine, filename="source.pdf", data=source)
+        confirmed = pdf_intake.confirm_draft(
+            engine,
+            draft["id"],
+            revision=draft["revision"],
+            binding=draft["binding"],
+        )
+        pdf_intake.intake_draft(
+            engine,
+            confirmed["id"],
+            revision=confirmed["revision"],
+            binding=confirmed["binding"],
+        )
+        before = read_workspace_view(engine)["overview"]
+        raw = json.loads(saved(source, draft["raw"]))
+        if fault == "source":
+            raw["source_sha256"] = "0" * 64
+        elif fault == "extra":
+            raw["confirmation"] = True
+        elif fault == "span":
+            raw["result"]["fields"]["amount_minor"]["evidence"] = [
+                {"page": 99, "start": 0, "end": 4}
+            ]
+        data = json.dumps(raw).encode()
+        if fault == "duplicate":
+            data = data[:-1] + b', "version":"1"}'
+        elif fault == "oversize":
+            data = b" " * (1024 * 1024 + 1)
+        elif fault == "non_object_null":
+            data = b"null"
+        elif fault == "list":
+            data = b"[]"
+        with pytest.raises(ValueError):
+            pdf_intake.create_draft(
+                engine, filename="source.pdf", data=source, extraction=data
+            )
+        assert read_workspace_view(engine)["overview"] == before
+    finally:
+        engine.dispose()
 
 
 def test_edit_preserves_saved_identity_and_clears_confirmation(
-    client: TestClient,
+    pg_dsns: dict[str, str],
 ) -> None:
-    source = make_pdf([INVOICE])
-    original = upload(client, source)
-    response = client.post(
-        "/pdf-drafts",
-        headers=HEADERS,
-        files={
-            "file": ("source.pdf", source, "application/pdf"),
-            "extraction": (
-                "saved.json",
-                saved(source, original["raw"]),
-                "application/json",
-            ),
-        },
-    )
-    draft = action(client, response.json(), "confirm")
-    edited = client.post(
-        f"/pdf-drafts/{draft['id']}/edit",
-        headers=HEADERS,
-        json={"revision": 1, "fields": draft["fields"]},
-    ).json()
-    assert edited["extraction"] == draft["extraction"]
-    assert edited["raw"] == draft["raw"]
-    assert edited["confirmed"] is False
-    assert edited["binding"] != draft["binding"]
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        source = make_pdf([INVOICE])
+        original = pdf_intake.create_draft(engine, filename="source.pdf", data=source)
+        loaded = pdf_intake.create_draft(
+            engine,
+            filename="source.pdf",
+            data=source,
+            extraction=saved(source, original["raw"]),
+        )
+        draft = pdf_intake.confirm_draft(
+            engine,
+            loaded["id"],
+            revision=loaded["revision"],
+            binding=loaded["binding"],
+        )
+        edited = pdf_intake.edit_draft(
+            engine, draft["id"], revision=1, fields=draft["fields"]
+        )
+        assert edited["extraction"] == draft["extraction"]
+        assert edited["raw"] == draft["raw"]
+        assert edited["confirmed"] is False
+        assert edited["binding"] != draft["binding"]
+    finally:
+        engine.dispose()

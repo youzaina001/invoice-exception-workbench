@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -138,14 +139,25 @@ def load_json(data: bytes) -> Any:
     )
 
 
-def validate_result(raw: object, pages: list[str]) -> Success | Failure:
+def _check_evidence_spans(fields: Fields, pages: Sequence[str]) -> None:
+    for field in fields.items().values():
+        for span in field.evidence:
+            if not (
+                1 <= span.page <= len(pages)
+                and span.start < span.end <= len(pages[span.page - 1])
+            ):
+                raise ValueError("evidence span is outside the canonical page text")
+
+
+def validate_fields(raw: object, pages: Sequence[str] = ()) -> Fields:
+    """Validate and normalize the five reviewed invoice fields against page spans."""
+    fields = Fields.model_validate(raw)
+    _check_evidence_spans(fields, pages)
+    return fields
+
+
+def validate_result(raw: object, pages: Sequence[str]) -> Success | Failure:
     result = RESULT.validate_python(raw)
     if isinstance(result, Success):
-        for field in result.fields.items().values():
-            for span in field.evidence:
-                if not (
-                    1 <= span.page <= len(pages)
-                    and span.start < span.end <= len(pages[span.page - 1])
-                ):
-                    raise ValueError("evidence span is outside the canonical page text")
+        _check_evidence_spans(result.fields, pages)
     return result
