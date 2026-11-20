@@ -84,9 +84,9 @@ The plan names ten evaluation slots, three preselected scored-development slots,
 one tuning slot and one preflight slot. Scored documents must be distinct. Each
 slot binds its original PDF hash and the complete logical request hash, plus a
 verified input-token bound of at most 12,000 including the prompt and schema.
-Use the shared PDF adapter's canonical tagged text and the runner's
-`request_payload`, `canonical` and `digest` functions to calculate that request
-identity offline. Slot/scenario names and gold labels are never sent to the model.
+Use the shared PDF adapter's canonical tagged text, the runner's
+`request_payload` and the `canonical` and `digest` functions from
+`invoice_triage.extraction` to calculate that request identity offline. Slot/scenario names and gold labels are never sent to the model.
 Normal developer commands and tests must not open reserved documents; the
 independent curator supplies their freeze/counting evidence separately.
 

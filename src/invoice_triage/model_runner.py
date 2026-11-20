@@ -1,11 +1,11 @@
-"""One finite experiment sender; ordinary replay needs no provider or credentials."""
+"""Experiment sender and archived run verifier; offline replay needs no credentials."""
 
 from __future__ import annotations
 
 import argparse
 import fcntl
-import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -13,16 +13,27 @@ import sys
 import tempfile
 import time
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import ROUND_CEILING, Decimal
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from pydantic import Field, field_validator
 
-from invoice_triage.evaluation import load_json, read_artifact
-from invoice_triage.extraction import RESULT, Failure, StrictModel, validate_result
+from invoice_triage.deterministic import extract_fields
+from invoice_triage.extraction import (
+    RESULT,
+    Failure,
+    StrictModel,
+    Success,
+    canonical,
+    digest,
+    load_json,
+    read_artifact,
+    validate_result,
+)
 from invoice_triage.pdf_text import MAX_PDF_BYTES, PDFText, read_pdf
 
 if TYPE_CHECKING:
@@ -35,7 +46,7 @@ HOME_NAME = "invoice-triage-pdf-experiment-v1"
 ROLES = {"evaluation": 10, "development": 3, "tuning": 1, "preflight": 1}
 
 
-class Evidence(StrictModel):
+class _Evidence(StrictModel):
     url: str
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     statement: str = Field(min_length=20, max_length=8000)
@@ -52,14 +63,14 @@ class Evidence(StrictModel):
         return value
 
 
-class Slot(StrictModel):
+class _Slot(StrictModel):
     id: str = Field(pattern=r"^[a-z0-9-]{1,64}$")
     role: Literal["evaluation", "development", "tuning", "preflight"]
     document_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     input_token_bound: int = Field(ge=1, le=12_000)
-    token_count_evidence: Evidence
+    token_count_evidence: _Evidence
 
 
 class Plan(StrictModel):
@@ -67,7 +78,7 @@ class Plan(StrictModel):
     project: str = Field(pattern=r"^[a-z][a-z0-9-]{4,62}$")
     location: Literal["global"]
     prompt: str = Field(min_length=1, max_length=32_000)
-    slots: list[Slot] = Field(min_length=15, max_length=15)
+    slots: list[_Slot] = Field(min_length=15, max_length=15)
 
 
 class Eligibility(StrictModel):
@@ -88,7 +99,7 @@ class Eligibility(StrictModel):
     includes_billed_reasoning: Literal[True]
     bounded_after_disconnect: Literal[True]
     no_out_of_pocket: Literal[True]
-    evidence: list[Evidence] = Field(min_length=1, max_length=10)
+    evidence: list[_Evidence] = Field(min_length=1, max_length=10)
 
     @field_validator(
         "includes_billed_reasoning",
@@ -103,17 +114,79 @@ class Eligibility(StrictModel):
         return value
 
 
-def canonical(value: Any) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), allow_nan=False
-    ).encode()
+class _ArchivedDocument(Protocol):
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def pdf(self) -> str: ...
 
 
-def digest(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+class _ArchivedProvenance(Protocol):
+    @property
+    def frozen_at(self) -> str: ...
+
+    @property
+    def developers(self) -> Sequence[str]: ...
+
+    @property
+    def curator(self) -> str | None: ...
+
+    @property
+    def exposure(self) -> Sequence[str]: ...
+
+    @property
+    def reserved_status(self) -> Literal["not-established", "established"]: ...
+
+
+class _ArchivedRun(Protocol):
+    @property
+    def state(self) -> str: ...
+
+    @property
+    def seal(self) -> str: ...
+
+    @property
+    def raw_files(self) -> Mapping[str, str]: ...
+
+    @property
+    def model_arm(self) -> str: ...
+
+    @property
+    def baseline_arm(self) -> str: ...
+
+    @property
+    def deterministic_sha256(self) -> str: ...
+
+    @property
+    def layout(self) -> str: ...
+
+
+class _ArchivedRunManifest(Protocol):
+    @property
+    def scope(self) -> Literal["development", "reserved"]: ...
+
+    @property
+    def kind(self) -> Literal["offline-stub", "first-outputs"]: ...
+
+    @property
+    def documents(self) -> Sequence[_ArchivedDocument]: ...
+
+    @property
+    def assigned_count(self) -> int: ...
+
+    @property
+    def provenance(self) -> _ArchivedProvenance: ...
+
+    @property
+    def prompt(self) -> str: ...
+
+    @property
+    def run(self) -> _ArchivedRun | None: ...
 
 
 def code_identity() -> str:
+    """Return the pinned SHA-256 identity of the runner and shared extraction code."""
     root = Path(__file__).parent
     return digest(
         SDK_VERSION.encode()
@@ -121,7 +194,6 @@ def code_identity() -> str:
             (root / name).read_bytes()
             for name in (
                 "model_runner.py",
-                "evaluation.py",
                 "extraction.py",
                 "pdf_text.py",
             )
@@ -129,14 +201,14 @@ def code_identity() -> str:
     )
 
 
-def shared_git_dir() -> Path:
+def _shared_git_dir() -> Path:
     common = subprocess.check_output(
         ["git", "rev-parse", "--git-common-dir"], text=True, stderr=subprocess.DEVNULL
     ).strip()
     return Path(common).resolve()
 
 
-def sync_directory(path: Path) -> None:
+def _sync_directory(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(fd)
@@ -144,7 +216,7 @@ def sync_directory(path: Path) -> None:
         os.close(fd)
 
 
-def atomic_json(path: Path, value: Any) -> None:
+def _atomic_json(path: Path, value: Any) -> None:
     # A crash between ledger and seal updates fails closed on the next command.
     with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as handle:
         temporary = Path(handle.name)
@@ -153,14 +225,14 @@ def atomic_json(path: Path, value: Any) -> None:
         os.fsync(handle.fileno())
     try:
         temporary.replace(path)
-        sync_directory(path.parent)
+        _sync_directory(path.parent)
     finally:
         temporary.unlink(missing_ok=True)
 
 
-def save_state(home: Path, state: dict[str, Any]) -> None:
-    atomic_json(home / "state.json", state)
-    atomic_json(
+def _save_state(home: Path, state: dict[str, Any]) -> None:
+    _atomic_json(home / "state.json", state)
+    _atomic_json(
         home.parent / (HOME_NAME + ".seal.json"),
         {
             "experiment_id": state["plan"]["experiment_id"],
@@ -171,13 +243,13 @@ def save_state(home: Path, state: dict[str, Any]) -> None:
     )
 
 
-def read_json(path: Path) -> Any:
+def _read_json(path: Path) -> Any:
     if path.is_symlink():
         raise ValueError("substituted state/artifact symlink")
     return load_json(read_artifact(path.parent, path.name))
 
 
-def checked_plan(raw: object) -> Plan:
+def _checked_plan(raw: object) -> Plan:
     plan = Plan.model_validate(raw)
     if Counter(slot.role for slot in plan.slots) != ROLES:
         raise ValueError(
@@ -194,22 +266,22 @@ def checked_plan(raw: object) -> Plan:
     return plan
 
 
-def stamp(raw: str) -> datetime:
+def _stamp(raw: str) -> datetime:
     parsed = datetime.fromisoformat(raw)
     if parsed.tzinfo is None:
         raise ValueError("eligibility timestamps need a timezone")
     return parsed
 
 
-def checked_receipt(raw: object, plan: Plan) -> Eligibility:
+def _checked_receipt(raw: object, plan: Plan) -> Eligibility:
     receipt = Eligibility.model_validate(raw)
     if Decimal(receipt.eligible_credit_usd) <= 0:
         raise ValueError("positive eligible unexpired credit is required")
     now = datetime.now(UTC)
     if (
-        not stamp(receipt.verified_at)
+        not _stamp(receipt.verified_at)
         <= now
-        < min(stamp(receipt.expires_at), stamp(receipt.credit_expires_at))
+        < min(_stamp(receipt.expires_at), _stamp(receipt.credit_expires_at))
     ):
         raise ValueError("eligibility/accounting receipt is expired or future-dated")
     if receipt.project != plan.project or receipt.location != plan.location:
@@ -217,7 +289,7 @@ def checked_receipt(raw: object, plan: Plan) -> Eligibility:
     return receipt
 
 
-def charge(slot: Slot, receipt: Eligibility) -> Decimal:
+def _charge(slot: _Slot, receipt: Eligibility) -> Decimal:
     return (
         (
             slot.input_token_bound * Decimal(receipt.input_usd_per_million)
@@ -227,8 +299,8 @@ def charge(slot: Slot, receipt: Eligibility) -> Decimal:
     ).quantize(Decimal("0.000000001"), rounding=ROUND_CEILING)
 
 
-def planned_charge(plan: Plan, receipt: Eligibility) -> Decimal:
-    total = sum((charge(slot, receipt) for slot in plan.slots), Decimal(0))
+def _planned_charge(plan: Plan, receipt: Eligibility) -> Decimal:
+    total = sum((_charge(slot, receipt) for slot in plan.slots), Decimal(0))
     if total * Decimal("1.25") >= 4 or total * Decimal("1.25") > min(
         Decimal(5), Decimal(receipt.eligible_credit_usd)
     ):
@@ -239,13 +311,13 @@ def planned_charge(plan: Plan, receipt: Eligibility) -> Decimal:
     return total
 
 
-def load_state(home: Path) -> dict[str, Any]:
+def _load_state(home: Path) -> dict[str, Any]:
     if home.is_symlink() or not (home / "state.json").is_file():
         raise ValueError(
             "allowance state is missing or substituted; no send is authorized"
         )
-    state = read_json(home / "state.json")
-    seal = read_json(home.parent / (HOME_NAME + ".seal.json"))
+    state = _read_json(home / "state.json")
+    seal = _read_json(home.parent / (HOME_NAME + ".seal.json"))
     if not isinstance(state, dict) or not isinstance(seal, dict):
         raise ValueError("corrupt allowance state")
     if seal != {
@@ -255,7 +327,7 @@ def load_state(home: Path) -> dict[str, Any]:
         "state_sha256": digest(canonical(state)),
     }:
         raise ValueError("allowance state/identity seal mismatch")
-    plan = checked_plan(state["plan"])
+    plan = _checked_plan(state["plan"])
     if state["code_sha256"] != code_identity():
         raise ValueError("frozen runner/contract changed; no new allowance or send")
     slots = {slot.id for slot in plan.slots}
@@ -287,10 +359,54 @@ def request_payload(plan: Plan, receipt: Eligibility, text: str) -> dict[str, An
     }
 
 
-def dispatch(
+def _decode_raw_envelope(
+    raw: bytes, pages: list[str]
+) -> tuple[Success | Failure, dict[str, Any] | None, str | None]:
+    body_dict: dict[str, Any] | None = None
+    try:
+        body = load_json(raw)
+        if not isinstance(body, dict):
+            raise ValueError("raw response root must be a JSON object")
+        body_dict = body
+        candidates = body.get("candidates")
+        if not isinstance(candidates, list) or len(candidates) != 1:
+            raise ValueError("nonfinal or multiple candidates")
+        candidate = candidates[0]
+        if not isinstance(candidate, dict) or candidate.get("finishReason") != "STOP":
+            raise ValueError("nonfinal candidate")
+        content = candidate.get("content")
+        if not isinstance(content, dict):
+            raise ValueError("missing candidate content")
+        parts = content.get("parts")
+        if not isinstance(parts, list) or not parts:
+            raise ValueError("empty content parts")
+        texts: list[str] = []
+        for part in parts:
+            if not isinstance(part, dict) or (set(part) - {"text", "thoughtSignature"}):
+                raise ValueError("non-text or tool envelope")
+            text = part.get("text")
+            if not isinstance(text, str):
+                raise ValueError("non-text envelope")
+            texts.append(text)
+        decoded = validate_result(load_json("".join(texts).encode()), pages)
+        return decoded, body_dict, None
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        return (
+            Failure(
+                version="1",
+                status="failure",
+                stage="validate",
+                code="invalid_envelope",
+            ),
+            body_dict,
+            type(exc).__name__,
+        )
+
+
+def _dispatch(
     home: Path,
     state: dict[str, Any],
-    slot: Slot,
+    slot: _Slot,
     pdf: PDFText,
     transport: httpx.BaseTransport | None,
 ) -> dict[str, Any]:
@@ -299,8 +415,8 @@ def dispatch(
     from google.genai import types
     from google.oauth2.credentials import Credentials
 
-    plan = checked_plan(state["plan"])
-    receipt = checked_receipt(state["receipt"], plan)
+    plan = _checked_plan(state["plan"])
+    receipt = _checked_receipt(state["receipt"], plan)
     attempt: dict[str, Any] = state["attempts"][slot.id]
     path = home / f"{slot.id}.raw.json"
 
@@ -311,7 +427,7 @@ def dispatch(
             handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
-        sync_directory(home)
+        _sync_directory(home)
 
     started = time.monotonic()
     result: Any = Failure(
@@ -351,20 +467,6 @@ def dispatch(
                 client.models.generate_content(
                     model=MODEL, contents=pdf.text, config=config
                 )
-        body = load_json(path.read_bytes())
-        candidates = body["candidates"]
-        if len(candidates) != 1 or candidates[0]["finishReason"] != "STOP":
-            raise ValueError("nonfinal or multiple candidates")
-        parts = candidates[0]["content"]["parts"]
-        if not parts or any(
-            set(part) - {"text", "thoughtSignature"}
-            or not isinstance(part.get("text"), str)
-            for part in parts
-        ):
-            raise ValueError("non-text or tool envelope")
-        result = validate_result(
-            load_json("".join(part["text"] for part in parts).encode()), pdf.pages
-        )
     except Exception as exc:
         # Provider errors may contain sensitive URLs; retain the type, not its text.
         attempt["error_type"] = type(exc).__name__
@@ -372,6 +474,17 @@ def dispatch(
             result = Failure(
                 version="1", status="failure", stage="validate", code="invalid_envelope"
             )
+    if path.exists():
+        raw = path.read_bytes()
+        attempt["raw_sha256"] = digest(raw)
+        decoded, body, decode_error = _decode_raw_envelope(raw, pdf.pages)
+        if "error_type" not in attempt:
+            result = decoded
+            if decode_error is not None:
+                attempt["error_type"] = decode_error
+        if body is not None:
+            attempt["returned_model"] = body.get("modelVersion")
+            attempt["usage"] = body.get("usageMetadata")
     attempt.update(
         status="failure" if isinstance(result, Failure) else "complete",
         result=result.model_dump(mode="json"),
@@ -379,17 +492,181 @@ def dispatch(
         completed_at=datetime.now(UTC).isoformat(),
         actual_cost_usd=None,
     )
-    if path.exists():
-        raw = path.read_bytes()
-        attempt["raw_sha256"] = digest(raw)
-        try:
-            body = load_json(raw)
-            attempt["returned_model"] = body.get("modelVersion")
-            attempt["usage"] = body.get("usageMetadata")
-        except (ValueError, AttributeError):
-            pass
-    save_state(home, state)
+    _save_state(home, state)
     return attempt
+
+
+def verify_archived_run(
+    manifest: _ArchivedRunManifest,
+    artifacts: Mapping[str, bytes],
+    arms: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify saved experiment archive state, seal, accounting, and raw envelopes."""
+    run = manifest.run
+    if run is None:
+        raise ValueError("archived run verification requires saved run metadata")
+    if (
+        manifest.kind != "first-outputs"
+        or {run.model_arm, run.baseline_arm} != set(arms)
+        or run.model_arm == run.baseline_arm
+    ):
+        raise ValueError("first-output analysis must name its two distinct arms")
+    provenance = manifest.provenance
+    if manifest.scope == "reserved" and (
+        manifest.assigned_count != 10
+        or not run.layout
+        or not provenance.curator
+        or provenance.curator in provenance.developers
+        or provenance.reserved_status != "established"
+        or not provenance.exposure
+    ):
+        raise ValueError(
+            "ten-document one-layout analysis requires independent curation/exposure"
+        )
+    if manifest.scope == "development" and manifest.assigned_count != 3:
+        raise ValueError(
+            "first-output development analysis uses the three frozen scored slots"
+        )
+    state, seal = load_json(artifacts[run.state]), load_json(artifacts[run.seal])
+    if seal != {
+        "experiment_id": state["plan"]["experiment_id"],
+        "plan_sha256": digest(canonical(state["plan"])),
+        "receipt_sha256": digest(canonical(state["receipt"])),
+        "state_sha256": digest(canonical(state)),
+    }:
+        raise ValueError("saved allowance seal mismatch")
+    plan = _checked_plan(state["plan"])
+    receipt = Eligibility.model_validate(state["receipt"])
+    if state["planned_reservation_usd"] != str(_planned_charge(plan, receipt)):
+        raise ValueError("saved reservation total differs from frozen accounting")
+    if (
+        receipt.project != plan.project
+        or receipt.location != plan.location
+        or Decimal(receipt.eligible_credit_usd) <= 0
+    ):
+        raise ValueError("saved eligibility does not cover the exact experiment")
+    if state["code_sha256"] != code_identity() or run.deterministic_sha256 != digest(
+        Path(__file__).with_name("deterministic.py").read_bytes()
+    ):
+        raise ValueError("frozen extractor or runner code changed")
+    if artifacts[manifest.prompt].decode() != plan.prompt:
+        raise ValueError("frozen prompt differs from runner plan")
+    role = "evaluation" if manifest.scope == "reserved" else "development"
+    slots = {s.document_id: s for s in plan.slots if s.role == role}
+    if set(slots) != {d.id for d in manifest.documents}:
+        raise ValueError("analysis documents differ from the frozen slot assignment")
+    attempts = state["attempts"]
+    known = {s.id: s for s in plan.slots}
+    if not set(attempts) <= set(known):
+        raise ValueError("saved allowance has unknown sends")
+    if set(run.raw_files) != {
+        name for name, a in attempts.items() if a.get("raw_sha256") is not None
+    }:
+        raise ValueError("first raw response inventory differs from all consumed slots")
+    frozen_at = _stamp(provenance.frozen_at)
+    for name, attempt in attempts.items():
+        if attempt["status"] not in {"reserved", "complete", "failure"}:
+            raise ValueError("invalid saved send status")
+        if attempt["maximum_charge_usd"] != str(_charge(known[name], receipt)):
+            raise ValueError("attempt charge differs from frozen accounting")
+        if attempt.get("elapsed_seconds") is not None and (
+            not math.isfinite(attempt["elapsed_seconds"])
+            or attempt["elapsed_seconds"] < 0
+        ):
+            raise ValueError("invalid extraction elapsed time")
+        at = _stamp(attempt["reserved_at"])
+        if at < frozen_at or not _stamp(receipt.verified_at) <= at < min(
+            _stamp(receipt.expires_at), _stamp(receipt.credit_expires_at)
+        ):
+            raise ValueError(
+                "send precedes freeze or lacks eligible accounting at dispatch"
+            )
+        if (
+            attempt.get("raw_sha256") is not None
+            and digest(artifacts[run.raw_files[name]]) != attempt["raw_sha256"]
+        ):
+            raise ValueError("first raw response hash mismatch")
+    for doc in manifest.documents:
+        source = artifacts[doc.pdf]
+        slot = slots[doc.id]
+        pdf = read_pdf(source)
+        if digest(source) != slot.source_sha256:
+            raise ValueError("saved source differs from frozen runner slot")
+        if not isinstance(pdf, PDFText):
+            if slot.id in attempts or any(
+                arm[doc.id] != pdf.model_dump(mode="json") for arm in arms.values()
+            ):
+                raise ValueError(
+                    "shared adapter failure must remain in both arms without a send"
+                )
+            continue
+        expected_baseline = extract_fields(pdf).model_dump(mode="json")
+        if arms[run.baseline_arm][doc.id] != expected_baseline:
+            raise ValueError("baseline differs from frozen deterministic extraction")
+        request_hash = digest(canonical(request_payload(plan, receipt, pdf.text)))
+        if request_hash != slot.request_sha256:
+            raise ValueError("complete request differs from counted frozen request")
+        attempt = attempts.get(slot.id)
+        expected: Any = Failure(
+            version="1", status="failure", stage="extract", code="not_sent"
+        )
+        if attempt is not None:
+            for key, value in {
+                "source_sha256": slot.source_sha256,
+                "request_sha256": request_hash,
+                "text_sha256": pdf.text_sha256,
+                "prompt_sha256": digest(plan.prompt.encode()),
+                "schema_sha256": digest(canonical(RESULT.json_schema())),
+                "requested_model": receipt.model,
+            }.items():
+                if attempt[key] != value:
+                    raise ValueError("attempt identity differs from frozen request")
+            if attempt["status"] == "reserved":
+                expected = Failure(
+                    version="1",
+                    status="failure",
+                    stage="extract",
+                    code="uncertain_send",
+                )
+            else:
+                expected = validate_result(attempt["result"], pdf.pages)
+                if attempt.get("raw_sha256") is not None:
+                    first, body, _ = _decode_raw_envelope(
+                        artifacts[run.raw_files[slot.id]], pdf.pages
+                    )
+                    if first != expected:
+                        raise ValueError("saved result differs from first raw response")
+                    if body is not None and (
+                        attempt.get("returned_model") != body.get("modelVersion")
+                        or attempt.get("usage") != body.get("usageMetadata")
+                    ):
+                        raise ValueError(
+                            "returned version/usage differs from first raw response"
+                        )
+                elif not isinstance(expected, Failure):
+                    raise ValueError("successful output lacks a first raw response")
+        if arms[run.model_arm][doc.id] != expected.model_dump(mode="json"):
+            raise ValueError(
+                "model arm differs from first result, including failed/uncertain sends"
+            )
+    return {
+        "kind": receipt.kind,
+        "experiment_id": plan.experiment_id,
+        "layout": run.layout,
+        "requested_model": receipt.model,
+        "sdk": f"google-genai=={SDK_VERSION}",
+        "runner_code_sha256": state["code_sha256"],
+        "deterministic_sha256": run.deterministic_sha256,
+        "plan_sha256": seal["plan_sha256"],
+        "receipt_sha256": seal["receipt_sha256"],
+        "planned_reservation_usd": state["planned_reservation_usd"],
+        "attempts": attempts,
+        "actual_cost_usd": None,
+        "evidence_limit": (
+            "Hashes establish consistency; curation, exposure and account "
+            "eligibility remain human attestations. Replay is not a fresh provider run."
+        ),
+    }
 
 
 def main(
@@ -407,7 +684,7 @@ def main(
     args = parser.parse_args(argv)
     common: Path | None = None
     try:
-        common = (common_dir or shared_git_dir()).resolve(strict=True)
+        common = (common_dir or _shared_git_dir()).resolve(strict=True)
         home = common / HOME_NAME
         lock_fd = os.open(
             common / (HOME_NAME + ".lock"),
@@ -426,9 +703,9 @@ def main(
                         "a frozen plan and sanitized user eligibility/accounting "
                         "receipt are required"
                     )
-                plan = checked_plan(read_json(args.plan))
-                receipt = checked_receipt(read_json(args.receipt), plan)
-                total = planned_charge(plan, receipt)
+                plan = _checked_plan(_read_json(args.plan))
+                receipt = _checked_receipt(_read_json(args.receipt), plan)
+                total = _planned_charge(plan, receipt)
                 home.mkdir(mode=0o700)
                 state: dict[str, Any] = {
                     "version": "1",
@@ -438,7 +715,7 @@ def main(
                     "planned_reservation_usd": str(total),
                     "attempts": {},
                 }
-                save_state(home, state)
+                _save_state(home, state)
                 output: Any = {
                     "slots": ROLES,
                     "planned_reservation_usd": str(total),
@@ -448,8 +725,8 @@ def main(
                     "experiment_home": str(home),
                 }
             else:
-                state = load_state(home)
-                plan = checked_plan(state["plan"])
+                state = _load_state(home)
+                plan = _checked_plan(state["plan"])
                 if args.command == "audit":
                     output = {
                         "experiment_id": plan.experiment_id,
@@ -466,8 +743,8 @@ def main(
                         )
                     RESULT.validate_python(output["result"])
                 else:
-                    receipt = checked_receipt(state["receipt"], plan)
-                    planned_charge(plan, receipt)
+                    receipt = _checked_receipt(state["receipt"], plan)
+                    _planned_charge(plan, receipt)
                     if transport is None and receipt.kind != "user-verified":
                         raise ValueError(
                             "controlled test evidence cannot authorize a live send"
@@ -503,7 +780,7 @@ def main(
                         "status": "reserved",
                         "requested_model": MODEL,
                         "reserved_at": datetime.now(UTC).isoformat(),
-                        "maximum_charge_usd": str(charge(slot, receipt)),
+                        "maximum_charge_usd": str(_charge(slot, receipt)),
                         "source_sha256": slot.source_sha256,
                         "request_sha256": slot.request_sha256,
                         "text_sha256": pdf.text_sha256,
@@ -511,8 +788,8 @@ def main(
                         "schema_sha256": digest(canonical(RESULT.json_schema())),
                         "actual_cost_usd": None,
                     }
-                    save_state(home, state)
-                    output = dispatch(home, state, slot, pdf, transport)
+                    _save_state(home, state)
+                    output = _dispatch(home, state, slot, pdf, transport)
             print(json.dumps(output, indent=2, sort_keys=True, allow_nan=False))
             return 2 if output.get("status") == "failure" else 0
     except (
@@ -525,7 +802,7 @@ def main(
     ) as exc:
         reason = "runner refused: " + str(exc)
         if args.command == "prepare" and common is not None:
-            atomic_json(
+            _atomic_json(
                 common / (HOME_NAME + ".last-refusal.json"),
                 {"at": datetime.now(UTC).isoformat(), "reason": reason},
             )

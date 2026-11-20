@@ -39,7 +39,7 @@ Apply Admissions, and row values never enter core audit payloads (pinned by
 
 A case closes only through an explicit operator Resolve action gated on a
 fresh pass of the required check for the current submission version. Anything
-else refuses with a machine-readable reason (`tests/test_resolution.py` pins
+else refuses with a machine-readable reason (`tests/test_case_lifecycle.py` pins
 each one): `case-not-open`, `errored-report`, `incomplete-report`, `check-mismatch`,
 `stale-version`, `snapshot-mismatch`, `verdict-not-pass`, plus the wiring
 reasons `no-verdict` and `current-missing`.

@@ -6,12 +6,8 @@ import argparse
 import signal
 from pathlib import Path
 
-from airflow_dq_agent.adoption import (
-    apply_governance_schema,
-    provision_restricted_logins,
-)
-
 from invoice_triage.db import setup_database
+from invoice_triage.governance import provision_governance_schema
 from invoice_triage.local_pg import LocalPostgres
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,8 +24,7 @@ def main() -> None:
     try:
         pg.ensure_database("warehouse")
         admin_wh = pg.dsn(db="warehouse")
-        apply_governance_schema(admin_wh)
-        creds = provision_restricted_logins(admin_wh)
+        creds = provision_governance_schema(admin_wh)
         intake = setup_database(admin_wh)
         (ROOT / ".env").write_text(
             f"INTAKE_DSN={intake.intake_dsn}\n"

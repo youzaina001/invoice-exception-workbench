@@ -1,4 +1,4 @@
-"""Local PDF review and explicit confirmation at the real HTTP/PG boundary."""
+"""Local PDF review and explicit confirmation at the PG and HTTP boundaries."""
 
 from __future__ import annotations
 
@@ -10,11 +10,15 @@ import pytest
 from airflow_dq_agent.warehouse.db import make_engine
 from conftest import signed_in_reviewer
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DBAPIError
 from test_evaluation import make_pdf
 
+from invoice_triage import pdf_intake
 from invoice_triage.app import create_app
+from invoice_triage.extraction import validate_fields
+from invoice_triage.request_scope import install_scope, read_workspace_view
 from invoice_triage.settings import Settings
 
 HEADERS = {"Accept": "application/json"}
@@ -22,6 +26,12 @@ INVOICE = (
     "Invoice ID: PDF-001\nSupplier ID: SUP-001\nInvoice date: 2026-10-23\n"
     "Currency: EUR\nInvoice total: 12.34\n"
 )
+
+
+def _scoped_engine(dsn: str) -> Engine:
+    engine = create_engine(dsn, future=True, pool_pre_ping=True)
+    install_scope(engine)
+    return engine
 
 
 def upload(client: TestClient, data: bytes | None = None) -> dict[str, Any]:
@@ -57,6 +67,94 @@ def overview(client: TestClient) -> dict[str, Any]:
     assert response.status_code == 200
     result: dict[str, Any] = response.json()
     return result
+
+
+def test_validate_fields_normalizes_and_checks_spans() -> None:
+    raw: dict[str, Any] = {
+        "invoice_id": {"state": "value", "value": "  PDF-001 ", "evidence": []},
+        "supplier_id": {"state": "value", "value": " SUP-001 ", "evidence": []},
+        "invoice_date": {"state": "value", "value": "2026-10-23", "evidence": []},
+        "currency": {"state": "value", "value": " eur ", "evidence": []},
+        "amount_minor": {
+            "state": "value",
+            "value": 0,
+            "evidence": [{"page": 1, "start": 0, "end": 7}],
+        },
+    }
+    normalized = validate_fields(raw, pages=[INVOICE])
+    assert normalized.invoice_id.value == "PDF-001"
+    assert normalized.supplier_id.value == "SUP-001"
+    assert normalized.currency.value == "EUR"
+    assert normalized.amount_minor.value == 0
+
+    for bad_amount in (True, 12.34, -1, 9_223_372_036_854_775_808):
+        bad = deepcopy(raw)
+        bad["amount_minor"]["value"] = bad_amount
+        with pytest.raises(ValueError):
+            validate_fields(bad, pages=[INVOICE])
+
+    bad_week = deepcopy(raw)
+    bad_week["invoice_date"]["value"] = "2026-W42"
+    with pytest.raises(ValueError):
+        validate_fields(bad_week, pages=[INVOICE])
+
+    bad_missing = deepcopy(raw)
+    bad_missing["amount_minor"] = {"state": "missing", "value": 1234, "evidence": []}
+    with pytest.raises(ValueError):
+        validate_fields(bad_missing, pages=[INVOICE])
+
+    bad_span = deepcopy(raw)
+    bad_span["amount_minor"]["evidence"] = [{"page": 2, "start": 0, "end": 1}]
+    with pytest.raises(ValueError):
+        validate_fields(bad_span, pages=[INVOICE])
+
+
+def test_review_rows_formats_cents_slices_evidence_and_handles_refused_draft() -> None:
+    draft: dict[str, Any] = {
+        "pages": [INVOICE],
+        "fields": {
+            "invoice_id": {"state": "value", "value": "PDF-001", "evidence": []},
+            "supplier_id": {"state": "value", "value": "SUP-001", "evidence": []},
+            "invoice_date": {
+                "state": "value",
+                "value": "2026-10-23",
+                "evidence": [],
+            },
+            "currency": {"state": "value", "value": "EUR", "evidence": []},
+            "amount_minor": {"state": "value", "value": 0, "evidence": []},
+        },
+        "raw": {
+            "status": "ok",
+            "fields": {
+                "invoice_id": {
+                    "evidence": [{"page": 1, "start": 12, "end": 19}],
+                },
+                "supplier_id": {"evidence": []},
+                "invoice_date": {"evidence": []},
+                "currency": {"evidence": []},
+                "amount_minor": {"evidence": []},
+            },
+        },
+    }
+    rows = pdf_intake.review_rows(draft)
+    by_name = {row["name"]: row for row in rows}
+    assert by_name["invoice_id"]["evidence"] == [{"page": 1, "text": "PDF-001"}]
+    assert by_name["amount_minor"]["value"] == "0.00"
+    assert by_name["amount_minor"]["label"] == "Amount (decimal, for example 12.34)"
+
+    draft["fields"]["amount_minor"]["value"] = 1234
+    rows = pdf_intake.review_rows(draft)
+    assert rows[-1]["value"] == "12.34"
+
+    draft["fields"]["amount_minor"] = {
+        "state": "missing",
+        "value": None,
+        "evidence": [],
+    }
+    rows = pdf_intake.review_rows(draft)
+    assert rows[-1]["value"] == ""
+
+    assert pdf_intake.review_rows({**draft, "fields": None}) == []
 
 
 def test_valid_pdf_needs_confirmation_then_runs_real_check_without_case(
@@ -218,75 +316,124 @@ def test_case_preserves_ambiguous_amount_state_after_a_later_draft_edit(
     assert "upload and confirm a corrected PDF" in page
 
 
-def test_edit_invalidates_confirmation_preserves_raw_and_creates_only_reviewed_ref(
-    client: TestClient,
+@pytest.mark.parametrize("state", ["missing", "ambiguous"])
+@pytest.mark.parametrize("action_name", ["edit", "confirm", "intake"])
+@pytest.mark.parametrize("form", [False, True])
+def test_absent_amount_with_a_number_refuses_without_writes(
+    pg_dsns: dict[str, str], state: str, action_name: str, form: bool
 ) -> None:
-    source = make_pdf([INVOICE])
-    draft = upload(client, source)
-    confirmed = action(client, draft, "confirm")
-    fields = deepcopy(draft["fields"])
-    fields["invoice_id"]["value"] = "PDF-REVIEWED"
-    fields["amount_minor"]["value"] = 999
-    response = client.post(
-        f"/pdf-drafts/{draft['id']}/edit",
-        headers=HEADERS,
-        json={"revision": draft["revision"], "fields": fields},
-    )
-    assert response.status_code == 200, response.text
-    edited = response.json()
-    assert edited["revision"] > draft["revision"]
-    assert edited["binding"] != draft["binding"]
-    assert edited["confirmed"] is False
-    assert edited["raw"] == draft["raw"]
-    assert edited["fields"] == fields
-    assert client.get(f"/pdf-drafts/{draft['id']}/source").content == source
-    action(client, confirmed, "intake", status=409)
-    action(client, edited, "intake", status=409)
-    assert overview(client)["submissions"] == []
-    corrected = action(client, edited, "confirm")
-    action(client, corrected, "intake")
-    rows = overview(client)["submissions"]
-    assert len(rows) == 1
-    assert rows[0]["invoice_ref"] == "PDF-REVIEWED"
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        source = make_pdf([INVOICE])
+        initial = pdf_intake.create_draft(engine, filename="synthetic.pdf", data=source)
+        draft = pdf_intake.confirm_draft(
+            engine,
+            initial["id"],
+            revision=initial["revision"],
+            binding=initial["binding"],
+        )
+        fields = deepcopy(draft["fields"])
+        fields["amount_minor"]["state"] = state
+        payload: dict[str, Any]
+        if not form:
+            payload = {**token(draft), "fields": fields}
+        else:
+            payload = {name: str(field["value"]) for name, field in fields.items()}
+            payload["amount_minor"] = "12.34"
+            payload.update(
+                {f"{name}_state": field["state"] for name, field in fields.items()}
+            )
+            payload.update({name: str(value) for name, value in token(draft).items()})
+        fn = getattr(pdf_intake, f"{action_name}_draft")
+        with pytest.raises(ValueError):
+            fn(engine, draft["id"], payload=payload, form=form)
+        assert pdf_intake.read_draft(engine, draft["id"]) == draft
+        assert read_workspace_view(engine)["overview"]["submissions"] == []
+    finally:
+        engine.dispose()
+
+
+def test_edit_invalidates_confirmation_preserves_raw_and_creates_only_reviewed_ref(
+    pg_dsns: dict[str, str],
+) -> None:
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        source = make_pdf([INVOICE])
+        draft = pdf_intake.create_draft(engine, filename="synthetic.pdf", data=source)
+        confirmed = pdf_intake.confirm_draft(engine, draft["id"], payload=token(draft))
+        fields = deepcopy(draft["fields"])
+        fields["invoice_id"]["value"] = "PDF-REVIEWED"
+        fields["amount_minor"]["value"] = 999
+        edited = pdf_intake.edit_draft(
+            engine,
+            draft["id"],
+            revision=draft["revision"],
+            fields=fields,
+        )
+        assert edited["revision"] > draft["revision"]
+        assert edited["binding"] != draft["binding"]
+        assert edited["confirmed"] is False
+        assert edited["raw"] == draft["raw"]
+        assert edited["fields"] == fields
+        assert pdf_intake.read_source(engine, draft["id"]) == source
+        for stale in (confirmed, edited):
+            with pytest.raises(pdf_intake.PDFConflict):
+                pdf_intake.intake_draft(engine, draft["id"], payload=token(stale))
+        assert read_workspace_view(engine)["overview"]["submissions"] == []
+        corrected = pdf_intake.confirm_draft(
+            engine, edited["id"], payload=token(edited)
+        )
+        pdf_intake.intake_draft(engine, corrected["id"], payload=token(corrected))
+        rows = read_workspace_view(engine)["overview"]["submissions"]
+        assert len(rows) == 1
+        assert rows[0]["invoice_ref"] == "PDF-REVIEWED"
+    finally:
+        engine.dispose()
 
 
 def test_source_replacement_invalidates_confirmation_and_stale_revision(
-    client: TestClient, pg_dsns: dict[str, str]
+    pg_dsns: dict[str, str],
 ) -> None:
-    original = upload(client)
-    confirmed = action(client, original, "confirm")
-    engine = make_engine(pg_dsns["admin"])
-    with engine.connect() as conn:
-        sources = (
-            conn.execute(text("SELECT to_jsonb(s) FROM wb.pdf_sources s"))
-            .scalars()
-            .all()
-        )
-        revisions = (
-            conn.execute(text("SELECT to_jsonb(r) FROM wb.pdf_revisions r"))
-            .scalars()
-            .all()
-        )
-    replacement = make_pdf([INVOICE.replace("12.34", "56.78")])
-    response = client.post(
-        f"/pdf-drafts/{original['id']}/source",
-        headers=HEADERS,
-        data={"revision": str(original["revision"])},
-        files={"file": ("replacement.pdf", replacement, "application/pdf")},
-    )
-    assert response.status_code == 200, response.text
-    updated = response.json()
-    assert updated["revision"] > original["revision"]
-    assert updated["source_hash"] == hashlib.sha256(replacement).hexdigest()
-    assert updated["confirmed"] is False
-    assert updated["raw"]["fields"]["amount_minor"]["value"] == 5678
-    assert client.get(f"/pdf-drafts/{original['id']}/source").content == replacement
-    action(client, confirmed, "intake", status=409)
-    action(client, updated, "intake", status=409)
-    action(client, original, "confirm", status=409)
-    assert overview(client)["submissions"] == []
+    engine = _scoped_engine(pg_dsns["intake"])
+    admin_engine = make_engine(pg_dsns["admin"])
     try:
-        with engine.connect() as conn:
+        original = pdf_intake.create_draft(
+            engine, filename="synthetic.pdf", data=make_pdf([INVOICE])
+        )
+        confirmed = pdf_intake.confirm_draft(
+            engine, original["id"], payload=token(original)
+        )
+        with admin_engine.connect() as conn:
+            sources = (
+                conn.execute(text("SELECT to_jsonb(s) FROM wb.pdf_sources s"))
+                .scalars()
+                .all()
+            )
+            revisions = (
+                conn.execute(text("SELECT to_jsonb(r) FROM wb.pdf_revisions r"))
+                .scalars()
+                .all()
+            )
+        replacement = make_pdf([INVOICE.replace("12.34", "56.78")])
+        updated = pdf_intake.replace_source(
+            engine,
+            original["id"],
+            payload={"revision": str(original["revision"])},
+            filename="replacement.pdf",
+            data=replacement,
+        )
+        assert updated["revision"] > original["revision"]
+        assert updated["source_hash"] == hashlib.sha256(replacement).hexdigest()
+        assert updated["confirmed"] is False
+        assert updated["raw"]["fields"]["amount_minor"]["value"] == 5678
+        assert pdf_intake.read_source(engine, original["id"]) == replacement
+        for attempt in (confirmed, updated):
+            with pytest.raises(pdf_intake.PDFConflict):
+                pdf_intake.intake_draft(engine, attempt["id"], payload=token(attempt))
+        with pytest.raises(pdf_intake.PDFConflict):
+            pdf_intake.confirm_draft(engine, original["id"], payload=token(original))
+        assert read_workspace_view(engine)["overview"]["submissions"] == []
+        with admin_engine.connect() as conn:
             saved_sources = (
                 conn.execute(text("SELECT to_jsonb(s) FROM wb.pdf_sources s"))
                 .scalars()
@@ -303,51 +450,90 @@ def test_source_replacement_invalidates_confirmation_and_stale_revision(
         assert len(saved_revisions) == len(revisions) + 1
     finally:
         engine.dispose()
+        admin_engine.dispose()
 
 
 @pytest.mark.parametrize("name", ["confirm", "intake"])
 @pytest.mark.parametrize("bad", [{"binding": "not-the-source"}, {"revision": -1}])
 def test_wrong_binding_and_revision_cannot_confirm_or_intake(
-    client: TestClient, name: str, bad: dict[str, Any]
+    pg_dsns: dict[str, str], name: str, bad: dict[str, Any]
 ) -> None:
-    draft = action(client, upload(client), "confirm")
-    response = client.post(
-        f"/pdf-drafts/{draft['id']}/{name}",
-        headers=HEADERS,
-        json={**token(draft), **bad},
-    )
-    assert response.status_code == 409, response.text
-    assert overview(client)["submissions"] == []
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        initial = pdf_intake.create_draft(
+            engine, filename="synthetic.pdf", data=make_pdf([INVOICE])
+        )
+        draft = pdf_intake.confirm_draft(engine, initial["id"], payload=token(initial))
+        fn = getattr(pdf_intake, f"{name}_draft")
+        with pytest.raises(pdf_intake.PDFConflict):
+            fn(engine, draft["id"], payload={**token(draft), **bad})
+        assert read_workspace_view(engine)["overview"]["submissions"] == []
+    finally:
+        engine.dispose()
 
 
 def test_refused_extraction_retains_source_but_never_stages(
-    client: TestClient,
+    pg_dsns: dict[str, str],
 ) -> None:
-    source = b"not a PDF"
-    draft = upload(client, source)
-    assert draft["raw"]["status"] == "failure"
-    assert client.get(f"/pdf-drafts/{draft['id']}/source").content == source
-    action(client, draft, "confirm", status=400)
-    action(client, draft, "intake", status=409)
-    assert overview(client)["submissions"] == []
-    assert client.post("/runs", headers=HEADERS).status_code == 409
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        source = b"not a PDF"
+        draft = pdf_intake.create_draft(engine, filename="bad.pdf", data=source)
+        assert draft["raw"]["status"] == "failure"
+        assert pdf_intake.read_source(engine, draft["id"]) == source
+        with pytest.raises(ValueError):
+            pdf_intake.confirm_draft(engine, draft["id"], payload=token(draft))
+        with pytest.raises(pdf_intake.PDFConflict):
+            pdf_intake.intake_draft(engine, draft["id"], payload=token(draft))
+        assert read_workspace_view(engine)["overview"]["submissions"] == []
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize("amount", [True, 12.34, -1, 9_223_372_036_854_775_808])
 def test_invalid_amount_edit_is_rejected_without_changing_draft(
-    client: TestClient, amount: Any
+    pg_dsns: dict[str, str], amount: Any
 ) -> None:
-    draft = upload(client)
-    fields = deepcopy(draft["fields"])
-    fields["amount_minor"]["value"] = amount
-    response = client.post(
-        f"/pdf-drafts/{draft['id']}/edit",
-        headers=HEADERS,
-        json={"revision": draft["revision"], "fields": fields},
-    )
-    assert response.status_code == 400, response.text
-    assert client.get(f"/pdf-drafts/{draft['id']}", headers=HEADERS).json() == draft
-    assert overview(client)["submissions"] == []
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        draft = pdf_intake.create_draft(
+            engine, filename="synthetic.pdf", data=make_pdf([INVOICE])
+        )
+        fields = deepcopy(draft["fields"])
+        fields["amount_minor"]["value"] = amount
+        with pytest.raises(ValueError):
+            pdf_intake.edit_draft(
+                engine, draft["id"], revision=draft["revision"], fields=fields
+            )
+        assert pdf_intake.read_draft(engine, draft["id"]) == draft
+        assert read_workspace_view(engine)["overview"]["submissions"] == []
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("raw_amount", ["1e2", "+12.34", "1.000", "abc"])
+def test_form_amount_edit_enforces_strict_decimal_dot(
+    pg_dsns: dict[str, str], raw_amount: str
+) -> None:
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        draft = pdf_intake.create_draft(
+            engine, filename="synthetic.pdf", data=make_pdf([INVOICE])
+        )
+        fields = deepcopy(draft["fields"])
+        payload: dict[str, Any] = {
+            name: str(field["value"]) for name, field in fields.items()
+        }
+        payload["amount_minor"] = raw_amount
+        payload.update(
+            {f"{name}_state": field["state"] for name, field in fields.items()}
+        )
+        payload["revision"] = str(draft["revision"])
+        with pytest.raises(ValueError):
+            pdf_intake.edit_draft(engine, draft["id"], payload=payload, form=True)
+        assert pdf_intake.read_draft(engine, draft["id"]) == draft
+    finally:
+        engine.dispose()
 
 
 def test_source_text_is_escaped_in_review_html(client: TestClient) -> None:
@@ -360,27 +546,39 @@ def test_source_text_is_escaped_in_review_html(client: TestClient) -> None:
 
 
 def test_unchanged_values_preserve_duplicate_history_after_review(
-    client: TestClient,
-) -> None:
-    draft = action(client, upload(client), "confirm")
-    original = action(client, draft, "intake")
-    fields = deepcopy(draft["fields"])
-    for field in fields.values():
-        field["evidence"] = []
-    edited = client.post(
-        f"/pdf-drafts/{draft['id']}/edit",
-        headers=HEADERS,
-        json={"revision": draft["revision"], "fields": fields},
-    ).json()
-    confirmed = action(client, edited, "confirm")
-    repeated = action(client, confirmed, "intake")
-    assert repeated["duplicate"] is True
-    assert repeated["submission_id"] == original["submission_id"]
-    assert len(overview(client)["submissions"]) == 1
-
-
-def test_hosted_pdf_routes_refuse_before_workspace_or_pdf_write(
     pg_dsns: dict[str, str],
+) -> None:
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        initial = pdf_intake.create_draft(
+            engine, filename="synthetic.pdf", data=make_pdf([INVOICE])
+        )
+        draft = pdf_intake.confirm_draft(engine, initial["id"], payload=token(initial))
+        original = pdf_intake.intake_draft(engine, draft["id"], payload=token(draft))
+        fields = deepcopy(draft["fields"])
+        for field in fields.values():
+            field["evidence"] = []
+        edited = pdf_intake.edit_draft(
+            engine, draft["id"], revision=draft["revision"], fields=fields
+        )
+        confirmed = pdf_intake.confirm_draft(
+            engine, edited["id"], payload=token(edited)
+        )
+        repeated = pdf_intake.intake_draft(
+            engine, confirmed["id"], payload=token(confirmed)
+        )
+        assert repeated["duplicate"] is True
+        assert repeated["submission_id"] == original["submission_id"]
+        assert len(read_workspace_view(engine)["overview"]["submissions"]) == 1
+    finally:
+        engine.dispose()
+
+
+# A proxy or mount prefix moves request.url.path off "/pdf-drafts", so the
+# middleware path check misses it; the handlers must still refuse.
+@pytest.mark.parametrize("prefix", ["", "/api"])
+def test_hosted_pdf_routes_refuse_before_workspace_or_pdf_write(
+    pg_dsns: dict[str, str], prefix: str
 ) -> None:
     settings = Settings(
         hosted=True,
@@ -388,21 +586,23 @@ def test_hosted_pdf_routes_refuse_before_workspace_or_pdf_write(
         read_dsn=pg_dsns["read"],
         audit_dsn=pg_dsns["audit"],
     )
-    with TestClient(create_app(settings, authenticate=signed_in_reviewer)) as client:
+    app = create_app(settings, authenticate=signed_in_reviewer)
+    with TestClient(app, root_path=prefix) as client:
         for reviewer in (None, "signed-in-reviewer"):
             headers = (
                 HEADERS if reviewer is None else {**HEADERS, "X-Reviewer": reviewer}
             )
+            base = f"{prefix}/pdf-drafts"
             requests: list[tuple[str, str, dict[str, Any]]] = [
-                ("POST", "/pdf-drafts", {"files": {"file": ("a.pdf", b"bad")}}),
-                ("GET", "/pdf-drafts/unknown", {}),
-                ("GET", "/pdf-drafts/unknown/source", {}),
-                ("POST", "/pdf-drafts/unknown/edit", {"json": {}}),
-                ("POST", "/pdf-drafts/unknown/confirm", {"json": {}}),
-                ("POST", "/pdf-drafts/unknown/intake", {"json": {}}),
+                ("POST", base, {"files": {"file": ("a.pdf", b"bad")}}),
+                ("GET", f"{base}/unknown", {}),
+                ("GET", f"{base}/unknown/source", {}),
+                ("POST", f"{base}/unknown/edit", {"json": {}}),
+                ("POST", f"{base}/unknown/confirm", {"json": {}}),
+                ("POST", f"{base}/unknown/intake", {"json": {}}),
                 (
                     "POST",
-                    "/pdf-drafts/unknown/source",
+                    f"{base}/unknown/source",
                     {"files": {"file": ("b.pdf", b"bad")}},
                 ),
             ]
@@ -436,17 +636,29 @@ def test_hosted_pdf_routes_refuse_before_workspace_or_pdf_write(
 @pytest.mark.parametrize("target", ["data", "fields"])
 @pytest.mark.parametrize("path", ["new", "duplicate", "restage"])
 def test_changed_stored_source_or_fields_cannot_reuse_confirmation(
-    client: TestClient, pg_dsns: dict[str, str], target: str, path: str
+    pg_dsns: dict[str, str], target: str, path: str
 ) -> None:
-    draft = action(client, upload(client), "confirm")
-    if path != "new":
-        action(client, draft, "intake")
-    if path == "restage":
-        other = upload(client, make_pdf([INVOICE.replace("PDF-001", "PDF-OTHER")]))
-        action(client, action(client, other, "confirm"), "intake")
-    before = overview(client)
-    engine = make_engine(pg_dsns["intake"])
+    engine = _scoped_engine(pg_dsns["intake"])
     try:
+        initial = pdf_intake.create_draft(
+            engine, filename="synthetic.pdf", data=make_pdf([INVOICE])
+        )
+        draft = pdf_intake.confirm_draft(engine, initial["id"], payload=token(initial))
+        if path != "new":
+            pdf_intake.intake_draft(engine, draft["id"], payload=token(draft))
+        if path == "restage":
+            other = pdf_intake.create_draft(
+                engine,
+                filename="other.pdf",
+                data=make_pdf([INVOICE.replace("PDF-001", "PDF-OTHER")]),
+            )
+            confirmed_other = pdf_intake.confirm_draft(
+                engine, other["id"], payload=token(other)
+            )
+            pdf_intake.intake_draft(
+                engine, confirmed_other["id"], payload=token(confirmed_other)
+            )
+        before = read_workspace_view(engine)["overview"]
         with engine.begin() as conn:
             if target == "data":
                 conn.execute(
@@ -465,61 +677,78 @@ def test_changed_stored_source_or_fields_cannot_reuse_confirmation(
                     ),
                     {"id": draft["id"], "revision": draft["revision"]},
                 )
-        action(client, draft, "intake", status=409)
-        assert overview(client) == before
+        with pytest.raises(pdf_intake.PDFConflict):
+            pdf_intake.intake_draft(engine, draft["id"], payload=token(draft))
+        assert read_workspace_view(engine)["overview"] == before
     finally:
         engine.dispose()
 
 
 def test_pdf_provenance_failure_rolls_back_submission_and_staging(
-    client: TestClient, pg_dsns: dict[str, str]
+    pg_dsns: dict[str, str],
 ) -> None:
-    draft = action(client, upload(client), "confirm")
-    engine = make_engine(pg_dsns["admin"])
+    intake_engine = _scoped_engine(pg_dsns["intake"])
+    admin_engine = make_engine(pg_dsns["admin"])
     try:
-        with engine.begin() as conn:
-            conn.execute(
-                text("""
-                CREATE FUNCTION wb.refuse_test_pdf_intake() RETURNS trigger
-                LANGUAGE plpgsql AS $$ BEGIN
-                    RAISE EXCEPTION 'test provenance failure';
-                END $$;
-                CREATE TRIGGER refuse_test_pdf BEFORE INSERT ON wb.pdf_intakes
-                FOR EACH ROW EXECUTE FUNCTION wb.refuse_test_pdf_intake();
-            """)
-            )
-        with pytest.raises(DBAPIError, match="test provenance failure"):
-            action(client, draft, "intake")
-        assert overview(client)["submissions"] == []
-        assert client.post("/runs", headers=HEADERS).status_code == 409
-        saved = client.get(f"/pdf-drafts/{draft['id']}", headers=HEADERS).json()
-        assert saved["confirmed"] is True and saved["submitted_id"] is None
+        initial = pdf_intake.create_draft(
+            intake_engine, filename="synthetic.pdf", data=make_pdf([INVOICE])
+        )
+        draft = pdf_intake.confirm_draft(
+            intake_engine, initial["id"], payload=token(initial)
+        )
+        try:
+            with admin_engine.begin() as conn:
+                conn.execute(
+                    text("""
+                    CREATE FUNCTION wb.refuse_test_pdf_intake() RETURNS trigger
+                    LANGUAGE plpgsql AS $$ BEGIN
+                        RAISE EXCEPTION 'test provenance failure';
+                    END $$;
+                    CREATE TRIGGER refuse_test_pdf BEFORE INSERT ON wb.pdf_intakes
+                    FOR EACH ROW EXECUTE FUNCTION wb.refuse_test_pdf_intake();
+                """)
+                )
+            with pytest.raises(DBAPIError, match="test provenance failure"):
+                pdf_intake.intake_draft(
+                    intake_engine, draft["id"], payload=token(draft)
+                )
+            assert read_workspace_view(intake_engine)["overview"]["submissions"] == []
+            saved = pdf_intake.read_draft(intake_engine, draft["id"])
+            assert saved["confirmed"] is True and saved["submitted_id"] is None
+        finally:
+            with admin_engine.begin() as conn:
+                conn.execute(
+                    text("DROP TRIGGER IF EXISTS refuse_test_pdf ON wb.pdf_intakes")
+                )
+                conn.execute(
+                    text("DROP FUNCTION IF EXISTS wb.refuse_test_pdf_intake()")
+                )
+        pdf_intake.intake_draft(intake_engine, draft["id"], payload=token(draft))
+        assert len(read_workspace_view(intake_engine)["overview"]["submissions"]) == 1
     finally:
-        with engine.begin() as conn:
-            conn.execute(
-                text("DROP TRIGGER IF EXISTS refuse_test_pdf ON wb.pdf_intakes")
-            )
-            conn.execute(text("DROP FUNCTION IF EXISTS wb.refuse_test_pdf_intake()"))
-        engine.dispose()
-    action(client, draft, "intake")
-    assert len(overview(client)["submissions"]) == 1
+        intake_engine.dispose()
+        admin_engine.dispose()
 
 
 @pytest.mark.parametrize("name", ["confirm", "intake"])
 def test_visible_fields_cannot_make_a_refused_source_reviewable(
-    client: TestClient, name: str
+    pg_dsns: dict[str, str], name: str
 ) -> None:
-    fields = upload(client)["fields"]
-    for field in fields.values():
-        field["evidence"] = []
-    refused = upload(client, b"not a PDF")
-    response = client.post(
-        f"/pdf-drafts/{refused['id']}/{name}",
-        headers=HEADERS,
-        json={**token(refused), "fields": fields},
-    )
-    assert response.status_code == 400
-    assert overview(client)["submissions"] == []
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        valid = pdf_intake.create_draft(
+            engine, filename="valid.pdf", data=make_pdf([INVOICE])
+        )
+        fields = deepcopy(valid["fields"])
+        for field in fields.values():
+            field["evidence"] = []
+        refused = pdf_intake.create_draft(engine, filename="bad.pdf", data=b"not a PDF")
+        fn = getattr(pdf_intake, f"{name}_draft")
+        with pytest.raises(ValueError):
+            fn(engine, refused["id"], payload={**token(refused), "fields": fields})
+        assert read_workspace_view(engine)["overview"]["submissions"] == []
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.parametrize(
@@ -527,25 +756,31 @@ def test_visible_fields_cannot_make_a_refused_source_reviewable(
 )
 @pytest.mark.parametrize("separator", [": ", " ", "\t"])
 def test_multiple_invoice_ids_are_refused_before_review_and_intake(
-    client: TestClient, label: str, separator: str
+    pg_dsns: dict[str, str], label: str, separator: str
 ) -> None:
-    source = make_pdf(
-        [
-            INVOICE.replace("Invoice ID: PDF-001", f"{label}{separator}{ref}")
-            for ref in ("PDF-A", "PDF-B")
-        ]
-    )
-    draft = upload(client, source)
-    assert draft["raw"]["status"] == "failure"
-    assert draft["raw"]["code"] == "multiple_invoices"
-    assert draft["fields"] is None
-    response = client.post(
-        f"/pdf-drafts/{draft['id']}/edit",
-        headers=HEADERS,
-        json={"revision": draft["revision"], "fields": {}},
-    )
-    assert response.status_code == 400
-    action(client, draft, "confirm", status=400)
-    action(client, draft, "intake", status=409)
-    assert client.get(f"/pdf-drafts/{draft['id']}/source").content == source
-    assert overview(client)["submissions"] == []
+    engine = _scoped_engine(pg_dsns["intake"])
+    try:
+        source = make_pdf(
+            [
+                INVOICE.replace("Invoice ID: PDF-001", f"{label}{separator}{ref}")
+                for ref in ("PDF-A", "PDF-B")
+            ]
+        )
+        draft = pdf_intake.create_draft(engine, filename="multi.pdf", data=source)
+        assert draft["raw"]["status"] == "failure"
+        assert draft["raw"]["code"] == "multiple_invoices"
+        assert draft["fields"] is None
+        with pytest.raises(ValueError):
+            pdf_intake.edit_draft(
+                engine,
+                draft["id"],
+                payload={"revision": draft["revision"], "fields": {}},
+            )
+        with pytest.raises(ValueError):
+            pdf_intake.confirm_draft(engine, draft["id"], payload=token(draft))
+        with pytest.raises(pdf_intake.PDFConflict):
+            pdf_intake.intake_draft(engine, draft["id"], payload=token(draft))
+        assert pdf_intake.read_source(engine, draft["id"]) == source
+        assert read_workspace_view(engine)["overview"]["submissions"] == []
+    finally:
+        engine.dispose()

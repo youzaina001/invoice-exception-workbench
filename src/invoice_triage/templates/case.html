@@ -2,23 +2,17 @@
 {% block title %} — case {{ case.invoice_ref }}{% endblock %}
 {% block body %}
 <nav><a href="/">Current Demo Attempt</a></nav>
-{% if case.resolution.reason == "attempt-read-only" %}<p>This Demo Attempt is read-only.</p>{% endif %}
+{% if case.attempt_read_only %}<p>This Demo Attempt is read-only.</p>{% endif %}
 <h2>Case {{ case.invoice_ref }} — {{ case.status }}</h2>
 {% if case.resolution.allowed %}
 <form action="/cases/{{ case.case_id }}/resolve" method="post">
 <button type="submit">Resolve case</button>
 </form>
 {% endif %}
-{% if resolve_refused %}
-<p class="error" role="alert">Resolve refused ({{ resolve_refused }}): {{ refusal_guidance }}</p>
+{% if case.refusal %}
+<p class="error" role="alert">Resolve refused ({{ case.refusal.reason }}): {{ case.refusal.guidance }}</p>
 {% endif %}
-{% if case.status == "resolved" %}
-<p>Next action: none, this case is resolved.</p>
-{% elif case.resolution.allowed %}
-<p>Next action: checks pass on the current version, press Resolve case to close it.</p>
-{% else %}
-<p>Next action: {{ next_action }}</p>
-{% endif %}
+<p>Next action: {{ case.guidance }}</p>
 <h3>{{ "Passed check" if case.verdict == "pass" else "Failed check" if case.verdict == "fail" else "Check error" }}</h3>
 <p>{{ case.check_id }} — latest verdict: {{ case.verdict }}</p>
 <h3>Core check evidence</h3>

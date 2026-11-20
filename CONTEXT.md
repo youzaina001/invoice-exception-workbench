@@ -21,5 +21,17 @@ One Reviewer's private collection of synthetic invoice submissions, cases, check
 _Avoid_: Shared demo, customer account
 
 **Demo Attempt**:
-One execution of the invoice walkthrough within a Demo Workspace, with its own submissions, cases, check results, and audit evidence. It starts with no invoices. Starting fresh begins a new attempt and leaves the previous attempt as read-only history. A Demo Workspace keeps at most five Demo Attempts; the oldest is removed when a sixth begins.
+One execution of the invoice walkthrough within a Demo Workspace, with its own submissions, cases, check results, and audit evidence. It starts with no invoices. Starting fresh begins a new attempt and leaves the previous attempt as read-only history. A Demo Workspace keeps at most five Demo Attempts; the oldest is removed when a sixth begins. Only the current Demo Attempt accepts new submissions, check runs, or case resolutions.
 _Avoid_: Login session, cleared history
+
+**Submission**:
+One immutable version of a supplier invoice entered into the workbench for a given invoice reference, either from a single-invoice CSV upload or from an explicitly confirmed local PDF review.
+_Avoid_: Raw upload, draft, mutable record
+
+**Current Submission**:
+The single active submission held in staging for quality checks at a given moment within local mode or a Demo Attempt. Running checks evaluates only the Current Submission, and resolving an Exception Case requires passing evidence bound to it.
+_Avoid_: Latest upload, staging table
+
+**Exception Case**:
+An open or resolved tracking record created when a required quality check does not pass for an invoice reference. An Exception Case remains open until an Operator explicitly resolves it after fresh passing checks and complete audit evidence on the Current Submission.
+_Avoid_: Ticket, quarantine, auto-closed alert

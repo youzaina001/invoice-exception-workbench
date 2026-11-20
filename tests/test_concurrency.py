@@ -33,7 +33,7 @@ def test_concurrent_ingests_keep_singleton_staging(
     serialization both uploads commit (2 rows); with the ingest lock the
     second upload waits and replaces the first (1 row).
     """
-    from invoice_triage.services import ingest_submission
+    from invoice_triage.intake import ingest_submission
 
     engine = make_engine(pg_dsns["intake"])
     barrier = threading.Barrier(2)
@@ -75,16 +75,15 @@ def test_run_after_staging_replacement_is_rejected_without_verdict(
     client: TestClient,
     api_headers: dict[str, str],
     pg_dsns: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A report must never bind to a submission it did not check.
 
     When another upload replaces staging between staged capture and the
-    core read, the run is rejected (HTTP 409) and no verdict is stored.
+    core read, the run is rejected and no verdict is stored.
     """
     from airflow_dq_agent.quality.suite import run_quality_suite as real_suite
 
-    import invoice_triage.services as services
+    import invoice_triage.cases as cases
 
     def _suite_with_interleaved_upload(dsn: str) -> Any:
         # An out-of-band database writer bypasses the intake lock. The binding
@@ -93,7 +92,6 @@ def test_run_after_staging_replacement_is_rejected_without_verdict(
             conn.execute(text("UPDATE wb.staging_invoice SET version = version + 1"))
         return real_suite(dsn)
 
-    monkeypatch.setattr(services, "run_quality_suite", _suite_with_interleaved_upload)
     first = client.post(
         "/ingest",
         files={
@@ -106,8 +104,12 @@ def test_run_after_staging_replacement_is_rejected_without_verdict(
         headers=api_headers,
     )
     assert first.status_code == 200
-    run = client.post("/runs", headers=api_headers)
-    assert run.status_code == 409
+    with pytest.raises(cases.StaleStagedError):
+        cases.run_current_checks(
+            intake=make_engine(pg_dsns["intake"]),
+            read_dsn=pg_dsns["read"],
+            _suite_runner=_suite_with_interleaved_upload,
+        )
     engine = make_engine(pg_dsns["admin"])
     with engine.connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM wb.case_verdicts")).scalar() == 0
@@ -125,7 +127,7 @@ def test_resolve_after_concurrent_upload_refuses_stale_pass(
     its final UPDATE, the case must stay open instead of resolving on a
     stale pass.
     """
-    from invoice_triage.services import resolve_case
+    from invoice_triage.cases import resolve_case
 
     for name in ("missing_amount.csv", "corrected_amount.csv"):
         ingest = client.post(
@@ -176,7 +178,7 @@ def test_overlapping_first_checks_preserve_both_run_verdicts(
     """Force the first-case race at SQL boundary, observe the public case history."""
     from concurrent.futures import ThreadPoolExecutor
 
-    from invoice_triage.services import get_case_detail, run_current_checks
+    from invoice_triage.cases import get_case_detail, run_current_checks
 
     client.post(
         "/ingest",
@@ -226,7 +228,8 @@ def test_check_keeps_staging_stable_through_core_read(
     """
     from concurrent.futures import ThreadPoolExecutor
 
-    from invoice_triage.services import ingest_submission, run_current_checks
+    from invoice_triage.cases import run_current_checks
+    from invoice_triage.intake import ingest_submission
 
     client.post(
         "/ingest",
@@ -285,7 +288,8 @@ def test_resolution_keeps_staging_stable_until_commit(
     """Interleave intake after gate reads; HTTP alone cannot force this overlap."""
     from concurrent.futures import ThreadPoolExecutor
 
-    from invoice_triage.services import ingest_submission, resolve_case
+    from invoice_triage.cases import resolve_case
+    from invoice_triage.intake import ingest_submission
 
     for name in ("missing_amount.csv", "corrected_amount.csv"):
         client.post(

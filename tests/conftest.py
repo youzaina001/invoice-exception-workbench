@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 import shutil
 import subprocess
 import sys
@@ -97,13 +96,11 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 @pytest.fixture(scope="session")
 def pg_dsns(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str]]:
-    from airflow_dq_agent.adoption import (
-        apply_governance_schema,
-        provision_restricted_logins,
-    )
-
-    from invoice_triage.core_integration import ensure_registered
     from invoice_triage.db import setup_database
+    from invoice_triage.governance import (
+        configure_governance,
+        provision_governance_schema,
+    )
     from invoice_triage.local_pg import LocalPostgres, find_free_port
 
     tmp = tmp_path_factory.mktemp("pg")
@@ -112,16 +109,10 @@ def pg_dsns(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str]
     try:
         pg.ensure_database("warehouse")
         admin_wh = pg.dsn(db="warehouse")
-        apply_governance_schema(admin_wh)
-        creds = provision_restricted_logins(admin_wh)
+        creds = provision_governance_schema(admin_wh)
         intake = setup_database(admin_wh)
         traces = tmp_path_factory.mktemp("traces")
-        os.environ["TRACE_POSTGRES"] = "true"
-        os.environ["AUDIT_DSN"] = creds.audit_dsn
-        os.environ["LLM_MODE"] = "stub"
-        os.environ["APPLY_MODE"] = "off"
-        os.environ["TRACES_DIR"] = str(traces)
-        ensure_registered()
+        configure_governance(audit_dsn=creds.audit_dsn, traces_dir=traces)
         yield {
             "admin": admin_wh,
             "intake": intake.intake_dsn,
