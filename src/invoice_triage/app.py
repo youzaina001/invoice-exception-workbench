@@ -20,29 +20,23 @@ from invoice_triage.auth import verified_reviewer
 from invoice_triage.extraction import Fields, load_json
 from invoice_triage.governance import CheckMissingError, configure_governance
 from invoice_triage.request_scope import (
-    bind_scope,
-    current_attempt,
+    AttemptNotFoundError,
+    AttemptReadOnlyError,
+    ExecutionScope,
     install_scope,
-    reset_scope,
-    set_attempt,
+    read_workspace_view,
+    resolve_scope,
 )
 from invoice_triage.resolution import refusal_guidance
 from invoice_triage.services import (
-    AttemptNotFoundError,
-    AttemptReadOnlyError,
     CaseNotFoundError,
     NothingStagedError,
     StaleStagedError,
-    ensure_demo_workspace,
     get_case_detail,
     ingest_submission,
-    list_demo_attempts,
-    list_overview,
     parse_amount_minor,
-    read_demo_attempt,
     resolve_case,
     run_current_checks,
-    start_fresh_attempt,
 )
 from invoice_triage.settings import Settings
 
@@ -76,18 +70,20 @@ def _error(request: Request, detail: str, status_code: int) -> Response:
 
 
 def _index_error(
-    request: Request, engine: Engine, detail: str, status_code: int
+    request: Request,
+    engine: Engine,
+    detail: str,
+    status_code: int,
+    *,
+    scope: ExecutionScope,
 ) -> Response:
-    attempt_id = current_attempt()
+    view = read_workspace_view(engine, scope=scope)
     return _render(
         request,
         "index.html",
         {
-            "overview": {
-                **list_overview(engine, attempt_id=attempt_id),
-                "attempt_id": attempt_id,
-            },
-            "attempts": list_demo_attempts(engine) if attempt_id else [],
+            "overview": view["overview"],
+            "attempts": view["attempts"],
             "error": detail,
             "last_run": None,
             "last_status": None,
@@ -215,40 +211,25 @@ def _named_attempt(request: Request) -> str | None:
     return named or None
 
 
-def _read_only_attempt(request: Request, current: str | None) -> Response | None:
-    """A named non-current Demo Attempt accepts reads and refuses writes."""
-    named = _named_attempt(request)
-    if named is None or current is None or named == current:
-        return None
-    payload = {"detail": "attempt-read-only", "reason": "attempt-read-only"}
-    if wants_json(request):
-        return JSONResponse(payload, status_code=409)
-    return _error(request, "attempt-read-only", 409)
-
-
-def _prepare_demo(request: Request) -> dict[str, str] | None:
-    """Open this Reviewer's Demo Workspace on the request's copied context."""
-    settings: Settings = request.app.state.settings
-    if not settings.hosted:
-        return None
-    reviewer = _reviewer_id(request)
-    if reviewer is None:
-        return None
-    intake, _, _ = _engines(request.app)
-    demo = ensure_demo_workspace(intake, reviewer)
-    set_attempt(demo["attempt_id"])
-    return demo
-
-
-def _prepare_mutation(request: Request) -> dict[str, str] | Response | None:
+def _request_scope(
+    request: Request, *, start_fresh: bool = False
+) -> ExecutionScope | Response:
     denied = _unsigned_response(request)
     if denied is not None:
         return denied
-    demo = _prepare_demo(request)
-    read_only = _read_only_attempt(
-        request, None if demo is None else demo["attempt_id"]
+    settings: Settings = request.app.state.settings
+    if not settings.hosted:
+        return ExecutionScope.local()
+    reviewer = _reviewer_id(request)
+    assert reviewer is not None
+    intake, _, _ = _engines(request.app)
+    return resolve_scope(
+        intake,
+        hosted=True,
+        reviewer_id=reviewer,
+        requested_attempt_id=_named_attempt(request),
+        start_fresh=start_fresh,
     )
-    return read_only if read_only is not None else demo
 
 
 @asynccontextmanager
@@ -294,36 +275,25 @@ def create_app(
 
     @app.middleware("http")
     async def _hosted_scope(request: Request, call_next: Any) -> Response:
-        # Bind here, not in the endpoint thread: that thread receives a copy.
         settings: Settings = request.app.state.settings
         if settings.hosted and (
             request.url.path == "/pdf-drafts"
             or request.url.path.startswith("/pdf-drafts/")
         ):
             return _error(request, "PDF review is available locally only", 403)
-        reviewer = authenticate(request) if settings.hosted else None
-        request.state.reviewer = reviewer
-        tokens = bind_scope(hosted=settings.hosted, reviewer=reviewer)
-        try:
-            return cast(Response, await call_next(request))
-        finally:
-            reset_scope(tokens)
+        request.state.reviewer = authenticate(request) if settings.hosted else None
+        return cast(Response, await call_next(request))
 
     @app.get("/")
     def index(request: Request) -> Response:
-        denied = _unsigned_response(request)
-        if denied is not None:
-            return denied
-        demo = _prepare_demo(request)
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, _, _ = _engines(request.app)
-        overview = list_overview(
-            intake, attempt_id=None if demo is None else demo["attempt_id"]
-        )
-        if demo is not None:
-            overview = {**overview, **demo}
+        view = read_workspace_view(intake, scope=scope)
         context = {
-            "overview": overview,
-            "attempts": list_demo_attempts(intake) if demo else [],
+            "overview": view["overview"],
+            "attempts": view["attempts"],
             "last_run": request.query_params.get("last_run"),
             "last_status": request.query_params.get("last_status"),
             "duplicate": request.query_params.get("duplicate"),
@@ -331,7 +301,7 @@ def create_app(
             "duplicate_version": request.query_params.get("version"),
             "made_current": request.query_params.get("made_current"),
         }
-        return _render(request, "index.html", context, overview)
+        return _render(request, "index.html", context, view["overview"])
 
     @app.post("/demo-attempts/start-fresh")
     def start_fresh(request: Request) -> Response:
@@ -340,12 +310,14 @@ def create_app(
             return denied
         if not request.app.state.settings.hosted:
             return _error(request, "not found", 404)
-        reviewer = _reviewer_id(request)
-        assert reviewer is not None
-        _prepare_demo(request)
-        intake, _, _ = _engines(request.app)
-        started = start_fresh_attempt(intake, reviewer)
-        set_attempt(started["attempt_id"])
+        scope = _request_scope(request, start_fresh=True)
+        if isinstance(scope, Response):
+            return scope
+        started = {
+            "workspace_id": scope.workspace_id,
+            "attempt_id": scope.attempt_id,
+            "previous_attempt_id": scope.previous_attempt_id,
+        }
         if wants_json(request):
             return JSONResponse(started)
         return RedirectResponse("/", status_code=303)
@@ -357,21 +329,23 @@ def create_app(
             return denied
         if not request.app.state.settings.hosted:
             return _error(request, "attempt not found", 404)
-        _prepare_demo(request)
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, _, audit = _engines(request.app)
         try:
-            payload = read_demo_attempt(
-                intake=intake, audit=audit, attempt_id=attempt_id
+            payload = read_workspace_view(
+                intake, audit=audit, scope=scope, attempt_id=attempt_id
             )
         except AttemptNotFoundError as exc:
             return _error(request, str(exc), 404)
         if wants_json(request):
-            return JSONResponse(cast(dict[str, Any], payload))
+            return JSONResponse(payload)
         return _render(
             request,
             "index.html",
             {"overview": payload, "read_only": True},
-            cast(dict[str, Any], payload),
+            payload,
         )
 
     @app.post("/pdf-drafts")
@@ -509,9 +483,11 @@ def create_app(
 
     @app.post("/ingest")
     def ingest(request: Request, file: UploadFile) -> Response:
-        demo = _prepare_mutation(request)
-        if isinstance(demo, Response):
-            return demo
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
+        if scope.is_read_only_attempt:
+            raise AttemptReadOnlyError("attempt-read-only")
         intake, _, _ = _engines(request.app)
         filename = file.filename or "upload.csv"
         data = file.file.read(MAX_UPLOAD_BYTES + 1)
@@ -521,11 +497,14 @@ def create_app(
                 intake,
                 f"{filename}: upload exceeds {MAX_UPLOAD_BYTES} bytes",
                 status_code=413,
+                scope=scope,
             )
         try:
-            submission = ingest_submission(intake, filename=filename, data=data)
+            submission = ingest_submission(
+                intake, filename=filename, data=data, scope=scope
+            )
         except ValueError as exc:
-            return _index_error(request, intake, str(exc), status_code=400)
+            return _index_error(request, intake, str(exc), status_code=400, scope=scope)
         if wants_json(request):
             return JSONResponse(submission)
         if submission["duplicate"]:
@@ -542,12 +521,12 @@ def create_app(
 
     @app.post("/runs")
     def run_checks(request: Request) -> Response:
-        demo = _prepare_mutation(request)
-        if isinstance(demo, Response):
-            return demo
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, read_dsn, _ = _engines(request.app)
         try:
-            run = run_current_checks(intake=intake, read_dsn=read_dsn)
+            run = run_current_checks(intake=intake, read_dsn=read_dsn, scope=scope)
         except (NothingStagedError, StaleStagedError, CheckMissingError) as exc:
             return _error(
                 request, str(exc), 502 if isinstance(exc, CheckMissingError) else 409
@@ -563,13 +542,14 @@ def create_app(
 
     @app.get("/cases/{case_id}")
     def get_case(request: Request, case_id: str) -> Response:
-        denied = _unsigned_response(request)
-        if denied is not None:
-            return denied
-        _prepare_demo(request)
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, _, audit = _engines(request.app)
         try:
-            case = get_case_detail(intake=intake, audit=audit, case_id=case_id)
+            case = get_case_detail(
+                intake=intake, audit=audit, case_id=case_id, scope=scope
+            )
         except CaseNotFoundError as exc:
             return _error(request, str(exc), 404)
         refused = request.query_params.get("resolve_refused")
@@ -586,25 +566,16 @@ def create_app(
 
     @app.post("/cases/{case_id}/resolve")
     def resolve(request: Request, case_id: str) -> Response:
-        demo = _prepare_mutation(request)
-        if isinstance(demo, Response):
-            return demo
+        scope = _request_scope(request)
+        if isinstance(scope, Response):
+            return scope
         intake, _, audit = _engines(request.app)
         try:
             outcome = resolve_case(
-                intake=intake,
-                audit=audit,
-                case_id=case_id,
-                attempt_id=None if demo is None else demo["attempt_id"],
+                intake=intake, audit=audit, case_id=case_id, scope=scope
             )
         except CaseNotFoundError as exc:
             return _error(request, str(exc), 404)
-        if outcome.get("reason") == "attempt-read-only":
-            if wants_json(request):
-                return JSONResponse(
-                    {**outcome, "detail": "attempt-read-only"}, status_code=409
-                )
-            return _error(request, "attempt-read-only", 409)
         if wants_json(request):
             return JSONResponse(cast(dict[str, Any], outcome))
         if outcome["resolved"]:

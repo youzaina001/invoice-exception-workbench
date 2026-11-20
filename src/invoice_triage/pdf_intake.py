@@ -14,18 +14,13 @@ from sqlalchemy.engine import Connection, Engine
 from invoice_triage.deterministic import extract_fields
 from invoice_triage.extraction import Fields, Success, validate_result
 from invoice_triage.pdf_text import MAX_PDF_BYTES, PDFText, read_pdf
-from invoice_triage.request_scope import current_hosted
+from invoice_triage.request_scope import ExecutionScope, scoped_transaction
 from invoice_triage.saved_extraction import SavedExtraction
 from invoice_triage.services import InvoiceRow, ingest_invoice_row
 
 
 class PDFConflict(ValueError):
     """The reviewed version or confirmation no longer matches the request."""
-
-
-def _local_only() -> None:
-    if current_hosted():
-        raise PermissionError("PDF review is available locally only")
 
 
 def _json(value: Any) -> str:
@@ -167,9 +162,15 @@ def _extracted_fields(source: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def create_draft(
-    engine: Engine, *, filename: str, data: bytes, extraction: object = None
+    engine: Engine,
+    *,
+    filename: str,
+    data: bytes,
+    extraction: object = None,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, Any]:
-    _local_only()
+    if scope is not None and scope.hosted:
+        raise PermissionError("PDF review is available locally only")
     source = _source(data, filename)
     saved = None
     if extraction is not None:
@@ -179,7 +180,7 @@ def create_draft(
             source["source_hash"], source["pages"]
         )
     draft_id = uuid4().hex
-    with engine.begin() as conn:
+    with scoped_transaction(engine, scope, mutate=True, local_only=True) as conn:
         stored = _store_source(conn, source)
         if saved is not None:
             stored.update(extraction=saved, raw=saved["result"])
@@ -194,15 +195,17 @@ def create_draft(
         return _read(conn, draft_id)
 
 
-def read_draft(engine: Engine, draft_id: str) -> dict[str, Any]:
-    _local_only()
-    with engine.connect() as conn:
+def read_draft(
+    engine: Engine, draft_id: str, *, scope: ExecutionScope | None = None
+) -> dict[str, Any]:
+    with scoped_transaction(engine, scope, mutate=False, local_only=True) as conn:
         return _read(conn, draft_id)
 
 
-def read_source(engine: Engine, draft_id: str) -> bytes:
-    _local_only()
-    with engine.connect() as conn:
+def read_source(
+    engine: Engine, draft_id: str, *, scope: ExecutionScope | None = None
+) -> bytes:
+    with scoped_transaction(engine, scope, mutate=False, local_only=True) as conn:
         draft = _read(conn, draft_id)
         return bytes(
             conn.execute(
@@ -238,10 +241,14 @@ def _current(
 
 
 def edit_draft(
-    engine: Engine, draft_id: str, *, revision: int, fields: object
+    engine: Engine,
+    draft_id: str,
+    *,
+    revision: int,
+    fields: object,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, Any]:
-    _local_only()
-    with engine.begin() as conn:
+    with scoped_transaction(engine, scope, mutate=True, local_only=True) as conn:
         draft = _read(conn, draft_id, lock=True)
         _current(draft, revision)
         if draft["raw"]["status"] != "ok":
@@ -266,11 +273,18 @@ def edit_draft(
 
 
 def replace_source(
-    engine: Engine, draft_id: str, *, revision: int, filename: str, data: bytes
+    engine: Engine,
+    draft_id: str,
+    *,
+    revision: int,
+    filename: str,
+    data: bytes,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, Any]:
-    _local_only()
+    if scope is not None and scope.hosted:
+        raise PermissionError("PDF review is available locally only")
     source = _source(data, filename)
-    with engine.begin() as conn:
+    with scoped_transaction(engine, scope, mutate=True, local_only=True) as conn:
         draft = _read(conn, draft_id, lock=True)
         _current(draft, revision)
         stored = _store_source(conn, source)
@@ -319,9 +333,9 @@ def confirm_draft(
     revision: int,
     binding: str,
     reviewed_fields: object | None = None,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, Any]:
-    _local_only()
-    with engine.begin() as conn:
+    with scoped_transaction(engine, scope, mutate=True, local_only=True) as conn:
         draft = _read(conn, draft_id, lock=True)
         _current(draft, revision, binding, reviewed_fields)
         _validated(draft)
@@ -344,9 +358,11 @@ def intake_draft(
     revision: int,
     binding: str,
     reviewed_fields: object | None = None,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, object]:
-    _local_only()
-    with engine.begin() as conn:
+    with scoped_transaction(
+        engine, scope, mutate=True, lock_staging=False, local_only=True
+    ) as conn:
         draft = _read(conn, draft_id, lock=True)
         _current(draft, revision, binding, reviewed_fields)
         if not draft["confirmed"]:
@@ -377,7 +393,11 @@ def intake_draft(
             ).encode()
         ).hexdigest()
         result = ingest_invoice_row(
-            conn, filename=draft["filename"], row=row, content_hash=content_hash
+            conn,
+            filename=draft["filename"],
+            row=row,
+            content_hash=content_hash,
+            scope=scope,
         )
         conn.execute(
             text(

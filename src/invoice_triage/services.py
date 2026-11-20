@@ -21,7 +21,12 @@ from invoice_triage.governance import (
     execute_amount_check,
     read_audit_lineage,
 )
-from invoice_triage.request_scope import current_attempt, current_reviewer, set_attempt
+from invoice_triage.request_scope import (
+    AttemptReadOnlyError,
+    ExecutionScope,
+    acquire_staging_lock,
+    scoped_transaction,
+)
 from invoice_triage.resolution import (
     ResolutionDecision,
     ResolutionRequest,
@@ -29,14 +34,6 @@ from invoice_triage.resolution import (
 )
 
 REQUIRED_COLUMNS = ("invoice_id", "supplier_id", "invoice_date", "currency", "amount")
-
-# Serializes replacement of the singleton staging projection. Held as a
-# transaction-scoped advisory lock, so it also works when staging is empty
-# (SELECT FOR UPDATE cannot lock zero rows) and releases on commit/rollback.
-# Keep lock identifiers stable across package renames so running versions agree.
-_STAGING_LOCK_KEY = (
-    int.from_bytes(hashlib.sha256(b"ledgerlens:staging").digest()[:8], "big") >> 1
-)
 
 
 class NothingStagedError(RuntimeError):
@@ -48,14 +45,6 @@ class StaleStagedError(RuntimeError):
 
 
 class CaseNotFoundError(RuntimeError):
-    pass
-
-
-class AttemptNotFoundError(RuntimeError):
-    pass
-
-
-class AttemptReadOnlyError(RuntimeError):
     pass
 
 
@@ -190,6 +179,7 @@ def _replace_staging(
     version: int,
     row: InvoiceRow,
     snapshot: str,
+    attempt_id: str | None = None,
 ) -> None:
     """Replace the singleton staging projection with one submission.
 
@@ -198,13 +188,12 @@ def _replace_staging(
     """
     # Staging holds exactly the current submission, so the suite verdict
     # can never mix rows from other invoices or versions.
-    attempt = current_attempt()
-    if attempt is None:
+    if attempt_id is None:
         conn.execute(text("DELETE FROM wb.staging_invoice"))
     else:
         conn.execute(
             text("DELETE FROM wb.staging_invoice WHERE attempt_id = :attempt"),
-            {"attempt": attempt},
+            {"attempt": attempt_id},
         )
     conn.execute(
         text(
@@ -228,14 +217,19 @@ def _replace_staging(
 
 
 def _restage_if_latest(
-    conn: Connection, invoice_ref: str, submission_id: str, version: int
+    conn: Connection,
+    invoice_ref: str,
+    submission_id: str,
+    version: int,
+    *,
+    attempt_id: str | None = None,
 ) -> bool:
     """Restage a duplicate upload when it is the invoice's latest version.
 
     History is untouched (no new version); only the singleton staging
     projection moves. Returns True when the submission became current.
     """
-    extra, extra_params = _attempt_sql(current_attempt())
+    extra, extra_params = _attempt_sql(attempt_id)
     latest = (
         conn.execute(
             text(
@@ -278,29 +272,43 @@ def _restage_if_latest(
         version=version,
         row=row,
         snapshot=snapshot_row(row),
+        attempt_id=attempt_id,
     )
     return True
 
 
 def ingest_submission(
-    engine: Engine, *, filename: str, data: bytes
+    engine: Engine,
+    *,
+    filename: str,
+    data: bytes,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, object]:
+    resolved = scope or ExecutionScope.local()
+    if resolved.is_read_only_attempt:
+        raise AttemptReadOnlyError("attempt-read-only")
     row = parse_submission_csv(data, filename=filename)
     content_hash = hashlib.sha256(data).hexdigest()
-    with engine.begin() as conn:
+    with scoped_transaction(engine, resolved, mutate=True, lock_staging=True) as conn:
         return ingest_invoice_row(
-            conn, filename=filename, row=row, content_hash=content_hash
+            conn, filename=filename, row=row, content_hash=content_hash, scope=resolved
         )
 
 
 def ingest_invoice_row(
-    conn: Connection, *, filename: str, row: InvoiceRow, content_hash: str
+    conn: Connection,
+    *,
+    filename: str,
+    row: InvoiceRow,
+    content_hash: str,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, object]:
     """Store a validated row in the caller's transaction and existing staging lock."""
+    resolved = scope or ExecutionScope.local()
     invoice_ref = row.invoice_id
     snapshot = snapshot_row(row)
-    _lock_staging(conn)
-    extra, extra_params = _attempt_sql(current_attempt())
+    acquire_staging_lock(conn)
+    extra, extra_params = _attempt_sql(resolved.attempt_id)
     existing = (
         conn.execute(
             text(
@@ -318,6 +326,7 @@ def ingest_invoice_row(
             invoice_ref,
             str(existing["id"]),
             int(existing["version"]),
+            attempt_id=resolved.attempt_id,
         )
         return _submission_payload(
             str(existing["id"]),
@@ -376,32 +385,16 @@ def ingest_invoice_row(
         version=version,
         row=row,
         snapshot=snapshot,
+        attempt_id=resolved.attempt_id,
     )
     return _submission_payload(submission_id, invoice_ref, version, False, True)
-
-
-def _lock_staging(conn: Connection) -> None:
-    reviewer = current_reviewer()
-    if reviewer is not None:
-        _lock_workspace(conn, reviewer)
-        latest = conn.execute(
-            text(
-                "SELECT id FROM wb.demo_attempts WHERE reviewer_id = :r"
-                " ORDER BY created_at DESC, id DESC LIMIT 1"
-            ),
-            {"r": reviewer},
-        ).scalar_one_or_none()
-        if latest != current_attempt():
-            raise AttemptReadOnlyError("attempt-read-only")
-    conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _STAGING_LOCK_KEY})
 
 
 def _current_staged(
     conn: Connection,
     invoice_ref: str | None = None,
     *,
-    attempt: str | None = None,
-    bound: bool = False,
+    attempt_id: str | None = None,
 ) -> RowMapping | None:
     query = (
         "SELECT invoice_ref, submission_id, version, snapshot FROM wb.staging_invoice"
@@ -411,11 +404,9 @@ def _current_staged(
     if invoice_ref is not None:
         clauses.append("invoice_ref = :ref")
         params["ref"] = invoice_ref
-    if not bound:
-        attempt = current_attempt()
-    if attempt is not None:
+    if attempt_id is not None:
         clauses.append("attempt_id = :attempt")
-        params["attempt"] = attempt
+        params["attempt"] = attempt_id
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
     return conn.execute(text(query + " LIMIT 1"), params).mappings().first()
@@ -425,13 +416,14 @@ def run_current_checks(
     *,
     intake: Engine,
     read_dsn: str,
+    scope: ExecutionScope | None = None,
     _suite_runner: Callable[[str], Any] | None = None,
 ) -> dict[str, object]:
+    resolved = scope or ExecutionScope.local()
     # ponytail: serialize the singleton staging journey; use per-invoice
     # staging and locks if simultaneous invoice checks become necessary.
-    with intake.begin() as conn:
-        _lock_staging(conn)
-        staged = _current_staged(conn)
+    with scoped_transaction(intake, resolved, mutate=True, lock_staging=True) as conn:
+        staged = _current_staged(conn, attempt_id=resolved.attempt_id)
         if staged is None:
             raise NothingStagedError("no submission staged; ingest a CSV first")
         invoice_ref = str(staged["invoice_ref"])
@@ -440,9 +432,9 @@ def run_current_checks(
         snapshot = str(staged["snapshot"])
         checked = execute_amount_check(read_dsn, _suite_runner=_suite_runner)
         status = checked.status
-        if _current_staged(conn) != staged:
+        if _current_staged(conn, attempt_id=resolved.attempt_id) != staged:
             raise StaleStagedError("staging changed during the check run; rerun checks")
-        extra, extra_params = _attempt_sql(current_attempt())
+        extra, extra_params = _attempt_sql(resolved.attempt_id)
         case_row = (
             conn.execute(
                 text(
@@ -533,9 +525,14 @@ def _row_dict(row: RowMapping) -> dict[str, object]:
 
 
 def get_case_detail(
-    *, intake: Engine, audit: Engine, case_id: str
+    *,
+    intake: Engine,
+    audit: Engine,
+    case_id: str,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, object]:
-    with intake.connect() as conn:
+    resolved = scope or ExecutionScope.local()
+    with scoped_transaction(intake, resolved, mutate=False) as conn:
         case = (
             conn.execute(
                 text(
@@ -604,7 +601,7 @@ def get_case_detail(
         )
         amount_states = {str(h["id"]): h["amount_state"] for h in history_rows}
         current = _current_staged(
-            conn, str(case["invoice_ref"]), attempt=case_attempt, bound=True
+            conn, str(case["invoice_ref"]), attempt_id=case_attempt
         )
         source_version: int = conn.execute(
             text("SELECT version FROM wb.submissions WHERE id = :id"),
@@ -621,11 +618,11 @@ def get_case_detail(
             .mappings()
             .all()
         )
-    audit_view = read_audit_lineage(
-        audit, verdicts=history_verdicts, latest_verdict=verdict
-    )
+        audit_view = read_audit_lineage(
+            audit, verdicts=history_verdicts, latest_verdict=verdict
+        )
     decision = _resolution_decision(case, verdict, current, audit_view.report_available)
-    if current_attempt() is not None and case["attempt_id"] != current_attempt():
+    if resolved.attempt_id is not None and case["attempt_id"] != resolved.attempt_id:
         decision = ResolutionDecision(False, "attempt-read-only")
     return {
         "case_id": str(case["id"]),
@@ -677,239 +674,12 @@ def get_case_detail(
     }
 
 
-def _lock_workspace(conn: Connection, reviewer_id: str) -> None:
-    conn.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:reviewer, 0))"),
-        {"reviewer": "ledgerlens:workspace:" + reviewer_id},
-    )
-
-
-def ensure_demo_workspace(engine: Engine, reviewer_id: str) -> dict[str, str]:
-    """Create this Reviewer's Demo Workspace and first empty Demo Attempt."""
-    with engine.begin() as conn:
-        _lock_workspace(conn, reviewer_id)
-        existing = (
-            conn.execute(
-                text("SELECT id FROM wb.demo_workspaces WHERE reviewer_id = :r"),
-                {"r": reviewer_id},
-            )
-            .mappings()
-            .first()
-        )
-        if existing is None:
-            workspace_id = uuid4().hex
-            conn.execute(
-                text(
-                    "INSERT INTO wb.demo_workspaces (id, reviewer_id) VALUES (:id, :r)"
-                ),
-                {"id": workspace_id, "r": reviewer_id},
-            )
-        else:
-            workspace_id = str(existing["id"])
-        attempt = (
-            conn.execute(
-                text(
-                    "SELECT id FROM wb.demo_attempts WHERE workspace_id = :w"
-                    " ORDER BY created_at DESC, id DESC LIMIT 1"
-                ),
-                {"w": workspace_id},
-            )
-            .mappings()
-            .first()
-        )
-        if attempt is None:
-            attempt_id = uuid4().hex
-            conn.execute(
-                text(
-                    "INSERT INTO wb.demo_attempts"
-                    " (id, workspace_id, reviewer_id, created_at)"
-                    " VALUES (:id, :w, :r, clock_timestamp())"
-                ),
-                {"id": attempt_id, "w": workspace_id, "r": reviewer_id},
-            )
-        else:
-            attempt_id = str(attempt["id"])
-    return {"workspace_id": workspace_id, "attempt_id": attempt_id}
-
-
-_MAX_DEMO_ATTEMPTS = 5
-
-
-def _delete_demo_attempt(conn: Connection, attempt_id: str) -> None:
-    """Remove one attempt and the rows that belong only to it.
-
-    Audit tables are append-only for the request role, so the check runs and
-    traces go through a definer function that deletes by this attempt only.
-    """
-    params = {"attempt": attempt_id}
-    for statement in (
-        "DELETE FROM wb.case_verdicts WHERE attempt_id = :attempt",
-        "DELETE FROM wb.cases WHERE attempt_id = :attempt",
-        "DELETE FROM wb.submission_rows WHERE attempt_id = :attempt",
-        "DELETE FROM wb.staging_invoice WHERE attempt_id = :attempt",
-        "DELETE FROM wb.submissions WHERE attempt_id = :attempt",
-    ):
-        conn.execute(text(statement), params)
-    conn.execute(text("SELECT wb.delete_attempt_audit(:attempt)"), params)
-    conn.execute(text("DELETE FROM wb.demo_attempts WHERE id = :attempt"), params)
-
-
-def start_fresh_attempt(engine: Engine, reviewer_id: str) -> dict[str, str]:
-    """Open a new current Demo Attempt. A workspace keeps at most five."""
-    # Staging visibility follows the current attempt. Clearing it lets this
-    # transaction remove the oldest attempt's staging row and nothing else.
-    set_attempt(None)
-    with engine.begin() as conn:
-        _lock_workspace(conn, reviewer_id)
-        workspace = (
-            conn.execute(
-                text("SELECT id FROM wb.demo_workspaces WHERE reviewer_id = :r"),
-                {"r": reviewer_id},
-            )
-            .mappings()
-            .one()
-        )
-        workspace_id = str(workspace["id"])
-        attempts = (
-            conn.execute(
-                text(
-                    "SELECT id FROM wb.demo_attempts WHERE workspace_id = :w"
-                    " ORDER BY created_at ASC, id ASC"
-                ),
-                {"w": workspace_id},
-            )
-            .mappings()
-            .all()
-        )
-        previous_id = str(attempts[-1]["id"])
-        attempt_id = uuid4().hex
-        conn.execute(
-            text(
-                "INSERT INTO wb.demo_attempts"
-                " (id, workspace_id, reviewer_id, created_at)"
-                " VALUES (:id, :w, :r, clock_timestamp())"
-            ),
-            {"id": attempt_id, "w": workspace_id, "r": reviewer_id},
-        )
-        if len(attempts) >= _MAX_DEMO_ATTEMPTS:
-            _delete_demo_attempt(conn, str(attempts[0]["id"]))
-    return {
-        "workspace_id": workspace_id,
-        "attempt_id": attempt_id,
-        "previous_attempt_id": previous_id,
-    }
-
-
-def list_demo_attempts(engine: Engine) -> list[dict[str, str]]:
-    with engine.connect() as conn:
-        return [
-            {"id": row.id, "created_at": row.created_at.isoformat()}
-            for row in conn.execute(
-                text(
-                    "SELECT id, created_at FROM wb.demo_attempts"
-                    " ORDER BY created_at DESC, id DESC"
-                )
-            )
-        ]
-
-
-def read_demo_attempt(
-    *, intake: Engine, audit: Engine, attempt_id: str
-) -> dict[str, object]:
-    """Read one Demo Attempt, including a previous read-only one."""
-    with intake.connect() as conn:
-        attempt = (
-            conn.execute(
-                text("SELECT id, workspace_id FROM wb.demo_attempts WHERE id = :id"),
-                {"id": attempt_id},
-            )
-            .mappings()
-            .first()
-        )
-        if attempt is None:
-            raise AttemptNotFoundError(f"attempt {attempt_id} not found")
-        verdicts = (
-            conn.execute(
-                text(
-                    "SELECT case_id, run_id, check_id, status"
-                    " FROM wb.case_verdicts WHERE attempt_id = :attempt"
-                    " ORDER BY id"
-                ),
-                {"attempt": attempt_id},
-            )
-            .mappings()
-            .all()
-        )
-    audit_view = read_audit_lineage(audit, attempt_id=attempt_id)
-    return {
-        "workspace_id": str(attempt["workspace_id"]),
-        "attempt_id": str(attempt["id"]),
-        **list_overview(intake, attempt_id=attempt_id),
-        "check_results": [
-            {
-                "case_id": row["case_id"],
-                "run_id": row["run_id"],
-                "check_id": row["check_id"],
-                "status": row["status"],
-            }
-            for row in verdicts
-        ],
-        "audit": audit_view.events,
-    }
-
-
-def list_overview(
-    engine: Engine, *, attempt_id: str | None = None
-) -> dict[str, object]:
-    submission_sql = (
-        "SELECT id, invoice_ref, version, filename, ingested_at FROM wb.submissions"
-    )
-    case_sql = "SELECT id, invoice_ref, check_id, status, created_at FROM wb.cases"
-    params: dict[str, str] = {}
-    if attempt_id is not None:
-        submission_sql += " WHERE attempt_id = :attempt"
-        case_sql += " WHERE attempt_id = :attempt"
-        params["attempt"] = attempt_id
-    with engine.connect() as conn:
-        submissions = (
-            conn.execute(
-                text(submission_sql + " ORDER BY ingested_at DESC"),
-                params,
-            )
-            .mappings()
-            .all()
-        )
-        cases = (
-            conn.execute(text(case_sql + " ORDER BY created_at DESC"), params)
-            .mappings()
-            .all()
-        )
-    return {
-        "submissions": [
-            {
-                "id": r["id"],
-                "invoice_ref": r["invoice_ref"],
-                "version": r["version"],
-                "filename": r["filename"],
-                "ingested_at": r["ingested_at"].isoformat(),
-            }
-            for r in submissions
-        ],
-        "cases": [
-            {
-                "id": r["id"],
-                "invoice_ref": r["invoice_ref"],
-                "check_id": r["check_id"],
-                "status": r["status"],
-                "created_at": r["created_at"].isoformat(),
-            }
-            for r in cases
-        ],
-    }
-
-
 def _refused_after_race(
-    conn: Connection, *, case_id: str, verdict: RowMapping
+    conn: Connection,
+    *,
+    case_id: str,
+    verdict: RowMapping,
+    attempt_id: str | None = None,
 ) -> dict[str, object]:
     """Re-read a lost resolve race and use the same gate as the first attempt."""
     case = (
@@ -922,7 +692,7 @@ def _refused_after_race(
     )
     if case is None:
         raise CaseNotFoundError(f"case {case_id} not found")
-    current = _current_staged(conn, str(case["invoice_ref"]))
+    current = _current_staged(conn, str(case["invoice_ref"]), attempt_id=attempt_id)
     decision = _resolution_decision(case, verdict, current, True)
     return {
         "case_id": case_id,
@@ -960,10 +730,14 @@ def _resolution_decision(
 
 
 def resolve_case(
-    *, intake: Engine, audit: Engine, case_id: str, attempt_id: str | None = None
+    *,
+    intake: Engine,
+    audit: Engine,
+    case_id: str,
+    scope: ExecutionScope | None = None,
 ) -> dict[str, object]:
-    with intake.begin() as conn:
-        _lock_staging(conn)
+    resolved = scope or ExecutionScope.local()
+    with scoped_transaction(intake, resolved, mutate=True, lock_staging=True) as conn:
         case = (
             conn.execute(
                 text(
@@ -977,13 +751,11 @@ def resolve_case(
         )
         if case is None:
             raise CaseNotFoundError(f"case {case_id} not found")
-        if attempt_id is not None and str(case["attempt_id"] or "") != attempt_id:
-            return {
-                "case_id": case_id,
-                "status": str(case["status"]),
-                "resolved": False,
-                "reason": "attempt-read-only",
-            }
+        if (
+            resolved.attempt_id is not None
+            and str(case["attempt_id"] or "") != resolved.attempt_id
+        ):
+            raise AttemptReadOnlyError("attempt-read-only")
         verdict = (
             conn.execute(
                 text(
@@ -997,7 +769,9 @@ def resolve_case(
             .mappings()
             .first()
         )
-        current = _current_staged(conn, str(case["invoice_ref"]))
+        current = _current_staged(
+            conn, str(case["invoice_ref"]), attempt_id=resolved.attempt_id
+        )
         audit_view = (
             read_audit_lineage(audit, latest_verdict=verdict)
             if verdict is not None
@@ -1039,6 +813,7 @@ def resolve_case(
                 conn,
                 case_id=case_id,
                 verdict=verdict,
+                attempt_id=resolved.attempt_id,
             )
         return {
             "case_id": case_id,
