@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 
 from invoice_triage import request_scope
@@ -111,5 +111,30 @@ def test_read_workspace_view_audit_fails_open_on_sqlalchemy_error(
         )
         assert view["attempt_id"] == scope.attempt_id
         assert view["audit"] == []
+    finally:
+        engine.dispose()
+
+
+def test_every_staging_transaction_locks_on_a_reused_pooled_connection(
+    pg_dsns: dict[str, str],
+) -> None:
+    # A direct caller's ordinary engine, without install_scope listeners.
+    engine = create_engine(pg_dsns["intake"], future=True, pool_size=1)
+    locks: list[str] = []
+
+    def count_locks(
+        conn: object, cursor: object, statement: str, *args: object
+    ) -> None:
+        if "pg_advisory_xact_lock" in statement:
+            locks.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count_locks)
+    try:
+        for _ in range(2):
+            with request_scope.scoped_transaction(
+                engine, mutate=True, lock_staging=True
+            ):
+                pass
+        assert len(locks) == 2
     finally:
         engine.dispose()

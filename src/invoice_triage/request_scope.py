@@ -74,7 +74,6 @@ def _bind_connection_scope(
 
 def _clear_scope_flag(conn: Connection) -> None:
     conn.info.pop("_ledgerlens_scope_applied", None)
-    conn.info.pop("_ledgerlens_staging_locked", None)
 
 
 def _apply_scope(
@@ -118,9 +117,8 @@ def install_scope(engine: Engine) -> None:
 
 
 def acquire_staging_lock(conn: Connection) -> None:
-    if conn.info.get("_ledgerlens_staging_locked"):
-        return
-    conn.info["_ledgerlens_staging_locked"] = True
+    # Transaction-level advisory locks are re-entrant, so locking again inside
+    # one transaction is harmless; caching it on the pooled connection is not.
     conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _STAGING_LOCK_KEY})
 
 
