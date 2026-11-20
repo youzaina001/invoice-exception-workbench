@@ -73,7 +73,7 @@ class _Slot(StrictModel):
     token_count_evidence: _Evidence
 
 
-class _Plan(StrictModel):
+class Plan(StrictModel):
     experiment_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
     project: str = Field(pattern=r"^[a-z][a-z0-9-]{4,62}$")
     location: Literal["global"]
@@ -81,7 +81,7 @@ class _Plan(StrictModel):
     slots: list[_Slot] = Field(min_length=15, max_length=15)
 
 
-class _Eligibility(StrictModel):
+class Eligibility(StrictModel):
     kind: Literal["user-verified", "controlled-transport"]
     attested_by: str = Field(min_length=1, max_length=200)
     verified_at: str
@@ -249,8 +249,8 @@ def _read_json(path: Path) -> Any:
     return load_json(read_artifact(path.parent, path.name))
 
 
-def _checked_plan(raw: object) -> _Plan:
-    plan = _Plan.model_validate(raw)
+def _checked_plan(raw: object) -> Plan:
+    plan = Plan.model_validate(raw)
     if Counter(slot.role for slot in plan.slots) != ROLES:
         raise ValueError(
             "freeze ten evaluation, three development, tuning and preflight slots"
@@ -273,8 +273,8 @@ def _stamp(raw: str) -> datetime:
     return parsed
 
 
-def _checked_receipt(raw: object, plan: _Plan) -> _Eligibility:
-    receipt = _Eligibility.model_validate(raw)
+def _checked_receipt(raw: object, plan: Plan) -> Eligibility:
+    receipt = Eligibility.model_validate(raw)
     if Decimal(receipt.eligible_credit_usd) <= 0:
         raise ValueError("positive eligible unexpired credit is required")
     now = datetime.now(UTC)
@@ -289,7 +289,7 @@ def _checked_receipt(raw: object, plan: _Plan) -> _Eligibility:
     return receipt
 
 
-def _charge(slot: _Slot, receipt: _Eligibility) -> Decimal:
+def _charge(slot: _Slot, receipt: Eligibility) -> Decimal:
     return (
         (
             slot.input_token_bound * Decimal(receipt.input_usd_per_million)
@@ -299,7 +299,7 @@ def _charge(slot: _Slot, receipt: _Eligibility) -> Decimal:
     ).quantize(Decimal("0.000000001"), rounding=ROUND_CEILING)
 
 
-def _planned_charge(plan: _Plan, receipt: _Eligibility) -> Decimal:
+def _planned_charge(plan: Plan, receipt: Eligibility) -> Decimal:
     total = sum((_charge(slot, receipt) for slot in plan.slots), Decimal(0))
     if total * Decimal("1.25") >= 4 or total * Decimal("1.25") > min(
         Decimal(5), Decimal(receipt.eligible_credit_usd)
@@ -342,7 +342,7 @@ def _load_state(home: Path) -> dict[str, Any]:
     return state
 
 
-def _request_payload(plan: _Plan, receipt: _Eligibility, text: str) -> dict[str, Any]:
+def request_payload(plan: Plan, receipt: Eligibility, text: str) -> dict[str, Any]:
     return {
         "model": MODEL,
         "contents": text,
@@ -459,7 +459,7 @@ def _dispatch(
                     token="controlled-transport-only"
                 )
             with genai.Client(**kwargs) as client:
-                payload = _request_payload(plan, receipt, pdf.text)
+                payload = request_payload(plan, receipt, pdf.text)
                 config = types.GenerateContentConfig(**payload["config"])
                 config.thinking_config = types.ThinkingConfig(
                     thinking_level=types.ThinkingLevel.MINIMAL
@@ -536,7 +536,7 @@ def verify_archived_run(
     }:
         raise ValueError("saved allowance seal mismatch")
     plan = _checked_plan(state["plan"])
-    receipt = _Eligibility.model_validate(state["receipt"])
+    receipt = Eligibility.model_validate(state["receipt"])
     if state["planned_reservation_usd"] != str(_planned_charge(plan, receipt)):
         raise ValueError("saved reservation total differs from frozen accounting")
     if (
@@ -603,7 +603,7 @@ def verify_archived_run(
         expected_baseline = extract_fields(pdf).model_dump(mode="json")
         if arms[run.baseline_arm][doc.id] != expected_baseline:
             raise ValueError("baseline differs from frozen deterministic extraction")
-        request_hash = digest(canonical(_request_payload(plan, receipt, pdf.text)))
+        request_hash = digest(canonical(request_payload(plan, receipt, pdf.text)))
         if request_hash != slot.request_sha256:
             raise ValueError("complete request differs from counted frozen request")
         attempt = attempts.get(slot.id)
@@ -770,7 +770,7 @@ def main(
                     pdf = read_pdf(data)
                     if not isinstance(pdf, PDFText):
                         raise ValueError("PDF refused before dispatch")
-                    payload = _request_payload(plan, receipt, pdf.text)
+                    payload = request_payload(plan, receipt, pdf.text)
                     if digest(canonical(payload)) != slot.request_sha256:
                         raise ValueError(
                             "complete prompt/schema/text request "

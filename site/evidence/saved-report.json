@@ -9,10 +9,10 @@
   "extraction_seconds": null,
   "live_comparison": "unavailable",
   "operator_observations": [],
-  "plan_sha256": "002263d1c2f0b191ad417f7113209d2a5dac4822cb3661473bbb6c6cc6e20b14",
+  "plan_sha256": "3610f9d676c3821279fa3d2c4634cf860eaef2494d0c48c5a0ee252f30f59333",
   "policy": "confirm-unchanged-then-declared-source-replacement-v1",
   "raw": {
-    "analysis_id": "7f5b05676f5da9779ae49b8ca210e86efc6c713f6ca3a0f82dd5fe09e2972aef",
+    "analysis_id": "cc4ed59a58d9bc6d9cfb1b03641fcd1c8384e733d00c8067349c06e4f0eb932c",
     "arms": {
       "baseline-stub": {
         "definite_fields": {
@@ -318,7 +318,7 @@
       "reserved_status": "not-established"
     },
     "scope": "development",
-    "scorer_sha256": "283ae48c37c37295ddba2d36290b83766f6c82dad925948b62fdf35e87807dee",
+    "scorer_sha256": "39e63638932f991dc51fd34221c5c18faf296c2ab67f4ef63bed312f0d938bef",
     "source_base": "c35cc65210ad8e1e963edefc3cd14170a6b23ce4",
     "version": "1"
   },
@@ -332,22 +332,22 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "9dcddb0661fd2a83e25e56883eb54525e1e2838f17548428823d052a90d164bd",
-          "draft_id": "8e9ce4c7ac6b4bc0bac047031cab8607",
+          "binding": "d200d772b2fc848bf297693e62637d86234412e505c6178670e59dd8985a6133",
+          "draft_id": "fb070bf61e074d039f9b3659d5c697fb",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "9dcddb0661fd2a83e25e56883eb54525e1e2838f17548428823d052a90d164bd",
-          "draft_id": "8e9ce4c7ac6b4bc0bac047031cab8607",
+          "binding": "d200d772b2fc848bf297693e62637d86234412e505c6178670e59dd8985a6133",
+          "draft_id": "fb070bf61e074d039f9b3659d5c697fb",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0001",
             "made_current": true,
-            "submission_id": "082b03f8ebcc42f99a186ee87a5eb157",
+            "submission_id": "010dd49041e74241b8988d66d8658463",
             "version": 1
           }
         },
@@ -355,8 +355,8 @@
           "action": "checks",
           "case_created": false,
           "case_id": null,
-          "report_id": "feeb480b88724bf3acedf62ab6c25431",
-          "run_id": "93df4eacedbd4a5d8de49373fd333543",
+          "report_id": "7cdc5c2a8cfd4778b6ab1f1c8ee6869a",
+          "run_id": "e4611969c6914584b1a8a209b7177275",
           "status": "pass"
         }
       ],
@@ -391,7 +391,7 @@
         }
       },
       "fields_agree": true,
-      "journey_seconds": 0.3232221550133545,
+      "journey_seconds": 0.33122056804131716,
       "outcome": "no_case",
       "review_seconds": null
     },
@@ -404,60 +404,60 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "f6208c9322269a22a9376f133fd6b95629f2029f4aee96f817c9ad43fb4dbb57",
-          "draft_id": "3285dd76f4444843819519d68690acff",
+          "binding": "14e9c9d273d872f9a5ba3815ef8058b5d0e48d54028b2ef498f5f9881cfa432c",
+          "draft_id": "7cdc13aa8ac54dcb89a84b1b8a11d44d",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "f6208c9322269a22a9376f133fd6b95629f2029f4aee96f817c9ad43fb4dbb57",
-          "draft_id": "3285dd76f4444843819519d68690acff",
+          "binding": "14e9c9d273d872f9a5ba3815ef8058b5d0e48d54028b2ef498f5f9881cfa432c",
+          "draft_id": "7cdc13aa8ac54dcb89a84b1b8a11d44d",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0002",
             "made_current": true,
-            "submission_id": "d0e3fabfcd86484d80dd9924292f0ae2",
+            "submission_id": "d6d0fbe4795644d3ab5662288869dce2",
             "version": 1
           }
         },
         {
           "action": "checks",
           "case_created": true,
-          "case_id": "a0fbcc94c5914424bcd8485fbd9d307a",
-          "report_id": "011232d0395a4c36994d243a7612ad3b",
-          "run_id": "7e60f912c5764a73854f09fbabe5e134",
+          "case_id": "5a77b85d33764e78801e670dd1dbcd8a",
+          "report_id": "3e41fe062eae48fea1b97c9b3629daba",
+          "run_id": "e652bfc075a944ff842591f257fe3376",
           "status": "fail"
         },
         {
           "action": "confirm",
-          "binding": "51b00d70a45f012cdc20d0b1d69fab36faa9d201a1ccd1410e03b3f643023f4d",
-          "draft_id": "3d3298a2e2ce4502ba4028404e115b4a",
+          "binding": "0fe859fc6c764b3f33142c5c84aabfb90878859cd2fd44afa65478fe96ec794a",
+          "draft_id": "224457bc4b6b44ce8867abc6f8f1afaa",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "51b00d70a45f012cdc20d0b1d69fab36faa9d201a1ccd1410e03b3f643023f4d",
-          "draft_id": "3d3298a2e2ce4502ba4028404e115b4a",
+          "binding": "0fe859fc6c764b3f33142c5c84aabfb90878859cd2fd44afa65478fe96ec794a",
+          "draft_id": "224457bc4b6b44ce8867abc6f8f1afaa",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0002",
             "made_current": true,
-            "submission_id": "7b9ac7b9670943aba77b419cdfd45b61",
+            "submission_id": "9da09408902943419d65104e6f0e038f",
             "version": 2
           }
         },
         {
           "action": "checks",
           "case_created": true,
-          "case_id": "a0fbcc94c5914424bcd8485fbd9d307a",
-          "report_id": "c865fb9a6edb439da5600f9906ad6c7e",
-          "run_id": "5824bae026e045ad870a6a91ea46976d",
+          "case_id": "5a77b85d33764e78801e670dd1dbcd8a",
+          "report_id": "9202cf85eb9f41139b8506b8436d937d",
+          "run_id": "a4ab9a68499e48f3bb19d62c7ccb9464",
           "status": "pass"
         },
         {
@@ -527,7 +527,7 @@
         }
       },
       "fields_agree": true,
-      "journey_seconds": 0.5935371509985998,
+      "journey_seconds": 0.5956645590486005,
       "outcome": "resolved",
       "review_seconds": null
     },
@@ -540,31 +540,31 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "e8b949c906ee4b1590aff00989b7cc038b623f9fc07ea979453e4312c9ac5592",
-          "draft_id": "cef319176a6c42f1b4e4bbe8d0cb66dc",
+          "binding": "4503d5fe407bada348e314ab5f46fcf33dea3281e29254dd2e1e31c6a6a9d9f2",
+          "draft_id": "9592e2ac32534775b85ec8e6f2750026",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "e8b949c906ee4b1590aff00989b7cc038b623f9fc07ea979453e4312c9ac5592",
-          "draft_id": "cef319176a6c42f1b4e4bbe8d0cb66dc",
+          "binding": "4503d5fe407bada348e314ab5f46fcf33dea3281e29254dd2e1e31c6a6a9d9f2",
+          "draft_id": "9592e2ac32534775b85ec8e6f2750026",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0003",
             "made_current": true,
-            "submission_id": "221b2a9e685544cdadef7a17f5fb9e4f",
+            "submission_id": "f02dac2c7b5d40128d86f7cd7883ddf2",
             "version": 1
           }
         },
         {
           "action": "checks",
           "case_created": true,
-          "case_id": "54bb4e9100fa44afb01295115864743a",
-          "report_id": "51472d3ee12d4c2491dd36e0f809bd3b",
-          "run_id": "3c8cbfeea6b64863b8ab43f973af16a7",
+          "case_id": "81c6ce4a9dee4d3f9ff00f7b06412e04",
+          "report_id": "3223229404954e288199c4febf6759ae",
+          "run_id": "3b4cf2b0912f4942b1670f3af011b760",
           "status": "fail"
         }
       ],
@@ -601,7 +601,7 @@
         }
       },
       "fields_agree": false,
-      "journey_seconds": 0.2584735350101255,
+      "journey_seconds": 0.2815868249745108,
       "outcome": "open",
       "review_seconds": null
     },
@@ -614,22 +614,22 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "e2f7ab7fb2e28d2aefbaa9c43822d4571e25b2258bbb0408bd5ff0e4535b7d45",
-          "draft_id": "294e7e1fb1724d43b452a75451f628d4",
+          "binding": "eb8799e34e67636d3aa8cf0f27377267600f50e7134dfde225946b1f1c9620b1",
+          "draft_id": "69c340978753471da35e2751f8677ac9",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "e2f7ab7fb2e28d2aefbaa9c43822d4571e25b2258bbb0408bd5ff0e4535b7d45",
-          "draft_id": "294e7e1fb1724d43b452a75451f628d4",
+          "binding": "eb8799e34e67636d3aa8cf0f27377267600f50e7134dfde225946b1f1c9620b1",
+          "draft_id": "69c340978753471da35e2751f8677ac9",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0004",
             "made_current": true,
-            "submission_id": "3a7c0985371741f1a2b2c1f4c95e50e4",
+            "submission_id": "29eb87be2c034645a59b15d27aebae80",
             "version": 1
           }
         },
@@ -637,8 +637,8 @@
           "action": "checks",
           "case_created": false,
           "case_id": null,
-          "report_id": "5033dfe1f361406582167ecd495f87d6",
-          "run_id": "8edc96762fe34868afcf6fbb4bc1dc08",
+          "report_id": "d6f790b149aa49559af65b7e8e75a4a9",
+          "run_id": "44c1fdbd91244edeb0d1e4311fcef4dd",
           "status": "pass"
         }
       ],
@@ -675,7 +675,7 @@
         }
       },
       "fields_agree": false,
-      "journey_seconds": 0.28838419399107806,
+      "journey_seconds": 0.2639472120208666,
       "outcome": "no_case",
       "review_seconds": null
     },
@@ -688,8 +688,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "2f94293999c4f4407474d00ad2c8e750dad5909b8fb33e77db854a2537f33ca7",
-          "draft_id": "f307dd1422a242378f01787c1dbce2c0",
+          "binding": "f13976bc2893c6c2a9f3ce5898e985cc4b17008ffa45db506a46a9096d01b403",
+          "draft_id": "e6ac52a840504aceb8c984adb18e3225",
           "revision": 1,
           "status": 400
         }
@@ -705,7 +705,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.23054680600762367,
+      "journey_seconds": 0.26006177498493344,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -718,8 +718,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "07bb0c0c773dedb2275dcbbb04e09fe4d48a056e6f7840117285452603a83806",
-          "draft_id": "914bd15a77494a328dc9f4482901b0e2",
+          "binding": "a4b86b67e7f7df3b8f27a6411e570f08f54ac278f787dec28bb1f8e3a54db66f",
+          "draft_id": "b33634aeb39c4c9dad70b786bb4b3bce",
           "revision": 1,
           "status": 400
         }
@@ -735,7 +735,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.24410884198732674,
+      "journey_seconds": 0.24244926095707342,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -748,8 +748,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "2265eebaf9ec5df9e72fd8e691700bea56588e1bdd5133eb18f3b0b0bdeb1522",
-          "draft_id": "26323732f9734dd8ba58f8e68766bc45",
+          "binding": "89dc2373db0dfa027cf3ffb9f9364e5fbc9b5532bce249323d03a6b5936aadff",
+          "draft_id": "5b9992e2b20e464c9c09b93c132986c6",
           "revision": 1,
           "status": 400
         }
@@ -765,7 +765,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.22439504999783821,
+      "journey_seconds": 0.24298909195931628,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -778,8 +778,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "587e4ce00159aadcd7d4bdce9d8c01db4fa8e61f3990d5e9a097766337bb7113",
-          "draft_id": "7abb094cf73f4d598581b6f4c5f43cad",
+          "binding": "b50c7fe01d2ae02b2d9e4b54e453e853e5ab1e5a8da714d41aa4293c152e7195",
+          "draft_id": "69fd2390d7d0497ebac24867c61f4a1e",
           "revision": 1,
           "status": 400
         }
@@ -795,7 +795,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.22654922201763839,
+      "journey_seconds": 0.2476544399978593,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -808,22 +808,22 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "b23ab34d341ed218fe84b27f8d947cfa04373ef9f352892d09db146df8f3bf3d",
-          "draft_id": "4f593459520d4af4829c631af4f92437",
+          "binding": "65afd097b1ad021f725dc1fcda7c768b1f86e2ca52bd316e062ab8582d8879d0",
+          "draft_id": "90e9569cf76f40c5b837a09573fba6aa",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "b23ab34d341ed218fe84b27f8d947cfa04373ef9f352892d09db146df8f3bf3d",
-          "draft_id": "4f593459520d4af4829c631af4f92437",
+          "binding": "65afd097b1ad021f725dc1fcda7c768b1f86e2ca52bd316e062ab8582d8879d0",
+          "draft_id": "90e9569cf76f40c5b837a09573fba6aa",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0009",
             "made_current": true,
-            "submission_id": "45158f8bb1784c6a99b4bb6bc496c7cc",
+            "submission_id": "21a1881452a242f29bdefc9315d72860",
             "version": 1
           }
         },
@@ -831,8 +831,8 @@
           "action": "checks",
           "case_created": false,
           "case_id": null,
-          "report_id": "ead10659e40e46ab9eb2bba6c968f99f",
-          "run_id": "8e81546b7b994d5ebbcbd441a73e2660",
+          "report_id": "452392aa7b8a4397bd279dfde76bf69a",
+          "run_id": "4069e1ab906744fc9b67430e7add67a7",
           "status": "pass"
         }
       ],
@@ -869,7 +869,7 @@
         }
       },
       "fields_agree": false,
-      "journey_seconds": 0.28380773100070655,
+      "journey_seconds": 0.3124145889887586,
       "outcome": "no_case",
       "review_seconds": null
     },
@@ -882,22 +882,22 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "28e8d27dcdb9386bac8931c13abbb9c078ffca5f8b93f9b3ccb5eb34c7331c46",
-          "draft_id": "0c2bf68176e34ef4a2392fa19c6a877e",
+          "binding": "1091f6f7350533147f998bf960cb880cebc7627372ea1b568e02bfa5c001a88c",
+          "draft_id": "2141b0b40c1b46eb91bf692a8c535f6f",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "28e8d27dcdb9386bac8931c13abbb9c078ffca5f8b93f9b3ccb5eb34c7331c46",
-          "draft_id": "0c2bf68176e34ef4a2392fa19c6a877e",
+          "binding": "1091f6f7350533147f998bf960cb880cebc7627372ea1b568e02bfa5c001a88c",
+          "draft_id": "2141b0b40c1b46eb91bf692a8c535f6f",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0010",
             "made_current": true,
-            "submission_id": "361c127b29bf4203b5d15b7834d3988a",
+            "submission_id": "d2614541e93549cd8f3b5499882cfa02",
             "version": 1
           }
         },
@@ -905,8 +905,8 @@
           "action": "checks",
           "case_created": false,
           "case_id": null,
-          "report_id": "bc97bd487c27499e844c80cb6f7f0baa",
-          "run_id": "ba4d1c869c564e16b35880aedeb0959c",
+          "report_id": "33fbfa3ceac34e858db3f868dcb17683",
+          "run_id": "7a1f071c039e4eedb8c40878717fe8ef",
           "status": "pass"
         }
       ],
@@ -943,7 +943,7 @@
         }
       },
       "fields_agree": false,
-      "journey_seconds": 0.27536111799417995,
+      "journey_seconds": 0.3049521280336194,
       "outcome": "no_case",
       "review_seconds": null
     },
@@ -956,8 +956,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "fd23aa666f806afea189c2432b3e93cb7dc166e41dc421507432e4f4811f0e2c",
-          "draft_id": "5bdd551ace154605a63c62e7c84fad52",
+          "binding": "ba3c84dc854766020babaf558e7f8a69a2bfd0a430d9cb2ba0d5c295505ddebd",
+          "draft_id": "67994605167c488ebe3da0e76236e1a6",
           "revision": 1,
           "status": 400
         }
@@ -973,7 +973,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.24745973301469348,
+      "journey_seconds": 0.2700514690368436,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -986,8 +986,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "1001ee033791ffdb2edf96e62d927f1c53fb53746702721a05a754e2fb72792d",
-          "draft_id": "4894006c5de6438b97bc33943bd3e1d7",
+          "binding": "bcbc124e9e993435ed108524c8c187a90a44ab183304ad4a8c9f42ed7caa3381",
+          "draft_id": "bd8951bb6cdc4e08995f2158ddd6d78a",
           "revision": 1,
           "status": 400
         }
@@ -1003,7 +1003,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.25736375799169764,
+      "journey_seconds": 0.27590987301664427,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1016,8 +1016,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "92abf36a07b266beee6dc31de8b8199a03fa943a6843091003383f5557528a58",
-          "draft_id": "fcfa1dc68bdd4b009ea889c6368bfc50",
+          "binding": "ae75d5ba3ac8514917944356da23fbcf5fc6946c474ad376e7e34454a93b3f3f",
+          "draft_id": "3e5d4f722ea54c2cb81b7b34b265b729",
           "revision": 1,
           "status": 400
         }
@@ -1033,7 +1033,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.2662109319935553,
+      "journey_seconds": 0.24429892195621505,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1046,22 +1046,22 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "21855d2700efa555d92f87e07227c68f30461c056c2a0d9d2aaa85464cb5f0ad",
-          "draft_id": "6d8577f336074c238526202502a5248a",
+          "binding": "b5d095b566ab74cbc09d233845cfaf4b75c58841a3e181f06987220592c1794a",
+          "draft_id": "b3cfedfbd7264a1a8373f80071c273d0",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "21855d2700efa555d92f87e07227c68f30461c056c2a0d9d2aaa85464cb5f0ad",
-          "draft_id": "6d8577f336074c238526202502a5248a",
+          "binding": "b5d095b566ab74cbc09d233845cfaf4b75c58841a3e181f06987220592c1794a",
+          "draft_id": "b3cfedfbd7264a1a8373f80071c273d0",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0001",
             "made_current": true,
-            "submission_id": "47cb973ae0ae4f3fa44f0cce97e6f7bd",
+            "submission_id": "1d3bce24e1284f9895037b001bd033c1",
             "version": 1
           }
         },
@@ -1069,8 +1069,8 @@
           "action": "checks",
           "case_created": false,
           "case_id": null,
-          "report_id": "3bb61592b00d493ab8463761cc49f33a",
-          "run_id": "3e5697908bfc4d0f833dee796a258878",
+          "report_id": "a2be45d45b2e4ddcb79cdc3cc740d433",
+          "run_id": "15e7ad497aeb4d05a2920a3bce08240c",
           "status": "pass"
         }
       ],
@@ -1105,7 +1105,7 @@
         }
       },
       "fields_agree": true,
-      "journey_seconds": 0.33383924802183174,
+      "journey_seconds": 0.32994338701246306,
       "outcome": "no_case",
       "review_seconds": null
     },
@@ -1118,60 +1118,60 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "d02c30a76ec75ca506b5794bbb0ee5949ff6309091c5a42a90e04fd435b3f8e9",
-          "draft_id": "45985829cd8e4ef3bae35d03eae40e9f",
+          "binding": "27dee98a700527367fe82c2d7afe9d7aaf182984be229c5f490e5c8c9fd51e89",
+          "draft_id": "64f1b9eb4dfb4217865e46955ff4cb83",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "d02c30a76ec75ca506b5794bbb0ee5949ff6309091c5a42a90e04fd435b3f8e9",
-          "draft_id": "45985829cd8e4ef3bae35d03eae40e9f",
+          "binding": "27dee98a700527367fe82c2d7afe9d7aaf182984be229c5f490e5c8c9fd51e89",
+          "draft_id": "64f1b9eb4dfb4217865e46955ff4cb83",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0002",
             "made_current": true,
-            "submission_id": "9610ca8a368a4f79af78b4be5ca7229c",
+            "submission_id": "ab7c0fcb0f8049acbcc32c50d48bc8a4",
             "version": 1
           }
         },
         {
           "action": "checks",
           "case_created": true,
-          "case_id": "0d15e07fc0dd41fd9aed2dddb1411571",
-          "report_id": "ba9a7c62c0734beb9a6d95f2cd59d470",
-          "run_id": "a7f25863c6374f3ba8dc5e6816ba884f",
+          "case_id": "b6ee05d850bf40b3b3fe3dadef1eedf9",
+          "report_id": "d96a35698fb7413783768870b33ad7c8",
+          "run_id": "07f55ab9365047a08aff2ee6956be665",
           "status": "fail"
         },
         {
           "action": "confirm",
-          "binding": "191eaa4f8b78bc5039cf7c91f5364169065e5f0617453f7294bc43f0b86bb140",
-          "draft_id": "8ba42f30de7f4d1d815bb36ea6c440de",
+          "binding": "0a9e2c59b93420889dfb43829c64c429e8285a2d82fb065a8f520214320d23e0",
+          "draft_id": "d822ef78652a444081236e97085a3a8f",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "191eaa4f8b78bc5039cf7c91f5364169065e5f0617453f7294bc43f0b86bb140",
-          "draft_id": "8ba42f30de7f4d1d815bb36ea6c440de",
+          "binding": "0a9e2c59b93420889dfb43829c64c429e8285a2d82fb065a8f520214320d23e0",
+          "draft_id": "d822ef78652a444081236e97085a3a8f",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0002",
             "made_current": true,
-            "submission_id": "f8a6c7f58a534793b1943b80f41b0ce4",
+            "submission_id": "4d3ca2174d2849d8b69d0809184b3521",
             "version": 2
           }
         },
         {
           "action": "checks",
           "case_created": true,
-          "case_id": "0d15e07fc0dd41fd9aed2dddb1411571",
-          "report_id": "181b951fe34d46fa919be47a6e180f93",
-          "run_id": "65f2a980f7aa4a2cb153dea446c697f3",
+          "case_id": "b6ee05d850bf40b3b3fe3dadef1eedf9",
+          "report_id": "498266e29d104fc1b1073859e4a123f4",
+          "run_id": "a98f0c3bb7e1489d98132ca360d8e1e7",
           "status": "pass"
         },
         {
@@ -1241,7 +1241,7 @@
         }
       },
       "fields_agree": true,
-      "journey_seconds": 0.57300727601978,
+      "journey_seconds": 0.5918778060004115,
       "outcome": "resolved",
       "review_seconds": null
     },
@@ -1254,22 +1254,22 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "e24c29d4d1cb128ea040187355ea00875b5ab0371c206f74dbd18753957818da",
-          "draft_id": "4199d111a7254d428f388ebb211cbf34",
+          "binding": "91f6f8da0f6d9d1491b36e6898129f6a47a0de54db178c866bca24deb3ebac95",
+          "draft_id": "d03fdc41af3942d6b17b661c391e341d",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "e24c29d4d1cb128ea040187355ea00875b5ab0371c206f74dbd18753957818da",
-          "draft_id": "4199d111a7254d428f388ebb211cbf34",
+          "binding": "91f6f8da0f6d9d1491b36e6898129f6a47a0de54db178c866bca24deb3ebac95",
+          "draft_id": "d03fdc41af3942d6b17b661c391e341d",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0003",
             "made_current": true,
-            "submission_id": "a7974b791b334427becb2b17d47ce911",
+            "submission_id": "58e6e71e81964588bfc73b671141d40a",
             "version": 1
           }
         },
@@ -1277,8 +1277,8 @@
           "action": "checks",
           "case_created": false,
           "case_id": null,
-          "report_id": "77be0b02f215419bba2fa21a89272e37",
-          "run_id": "71a3968b311a486aa0c36303064b7d4a",
+          "report_id": "ab86ebc717bf4f64aaa67bdd5c964c4c",
+          "run_id": "719685557cfb4dc69e057fb7f6d3b7ad",
           "status": "pass"
         }
       ],
@@ -1313,7 +1313,7 @@
         }
       },
       "fields_agree": true,
-      "journey_seconds": 0.27465687500080094,
+      "journey_seconds": 0.2924634029623121,
       "outcome": "no_case",
       "review_seconds": null
     },
@@ -1326,60 +1326,60 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "37cab88bbe1fb461bbdcc1ae758cc993bb2813818b4ee8336e489fd65ab88a71",
-          "draft_id": "16ffb9ae9262453b91c0b1d9674b4aeb",
+          "binding": "49d8c27e6679deef26ccc447d2dc4b50a8ab54da969485dbc66931dc1094e93a",
+          "draft_id": "da59c29cbd05403aaca218aa544649a7",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "37cab88bbe1fb461bbdcc1ae758cc993bb2813818b4ee8336e489fd65ab88a71",
-          "draft_id": "16ffb9ae9262453b91c0b1d9674b4aeb",
+          "binding": "49d8c27e6679deef26ccc447d2dc4b50a8ab54da969485dbc66931dc1094e93a",
+          "draft_id": "da59c29cbd05403aaca218aa544649a7",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0004",
             "made_current": true,
-            "submission_id": "2916d0699ae7456580f9911e306f3343",
+            "submission_id": "b3d9a5807dce460fac3f92b8fbe7ccc2",
             "version": 1
           }
         },
         {
           "action": "checks",
           "case_created": true,
-          "case_id": "dca2bfdbfb1e42e2b18b845ce990c274",
-          "report_id": "eabc788521874c219c13aad2a14a8081",
-          "run_id": "db780f4f2bff4c3b88393282d9c84812",
+          "case_id": "e4fc8774be2746a8b212b8d743768c28",
+          "report_id": "ad4a350a4940494e9c01324590aee096",
+          "run_id": "911cfd0a0f4940879c31fe97ac3a9815",
           "status": "fail"
         },
         {
           "action": "confirm",
-          "binding": "ae4f5db2b5ad7fe3f3fdfa9391ac3cdd6649e35f140f506ee4f87b4f51f202af",
-          "draft_id": "e8768c1aac834b22b818e6b582ad55bf",
+          "binding": "fac947e6eccfd0c1f84219b0a09bb1db9e8c3a88b4cef2c47dcda67516ca5488",
+          "draft_id": "b3c8056794a749c9933c91ae1a44f0c4",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "ae4f5db2b5ad7fe3f3fdfa9391ac3cdd6649e35f140f506ee4f87b4f51f202af",
-          "draft_id": "e8768c1aac834b22b818e6b582ad55bf",
+          "binding": "fac947e6eccfd0c1f84219b0a09bb1db9e8c3a88b4cef2c47dcda67516ca5488",
+          "draft_id": "b3c8056794a749c9933c91ae1a44f0c4",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0004",
             "made_current": true,
-            "submission_id": "f4fd6dfa6ff847d99c0cec018b552e4f",
+            "submission_id": "4cfcfc14cccd428ba92c076dce354e1e",
             "version": 2
           }
         },
         {
           "action": "checks",
           "case_created": true,
-          "case_id": "dca2bfdbfb1e42e2b18b845ce990c274",
-          "report_id": "696464927d494156863e75ee7180c56a",
-          "run_id": "120a18f02bb04194b4781036f3469841",
+          "case_id": "e4fc8774be2746a8b212b8d743768c28",
+          "report_id": "4d4c03393cf1408c88bf53b2a74009d5",
+          "run_id": "04504c3460be4eb6aae77e5f3bb6ad0e",
           "status": "pass"
         },
         {
@@ -1449,7 +1449,7 @@
         }
       },
       "fields_agree": true,
-      "journey_seconds": 0.5718674609961454,
+      "journey_seconds": 0.6098519479855895,
       "outcome": "resolved",
       "review_seconds": null
     },
@@ -1462,8 +1462,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "d8e46b1c2b3390b2a356122a7c53a8d1bc091dcaf716993a11820de62c6bf909",
-          "draft_id": "470be4bf9f0741b4848fa499b7e8cf16",
+          "binding": "76a3b50a9e4d1876eee41c8a4f5b43659b5cab3912a35e8d6b171705b523c7d8",
+          "draft_id": "70ff68096f9a4a848aa2ee170597d084",
           "revision": 1,
           "status": 400
         }
@@ -1479,7 +1479,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.22068364801816642,
+      "journey_seconds": 0.22718533198349178,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1492,8 +1492,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "af5faad83ab68698d890629e4dc63318a954e18f8f2b80ba9aefe80b15f1b01a",
-          "draft_id": "7e3ba6347c1c46f09435449798dde975",
+          "binding": "1432d85170cc3b550eecf6fd635144c6ce1653ac9fa260057459f1ef9421bb09",
+          "draft_id": "333370f3c0534ff4ae912fc2d13c2c94",
           "revision": 1,
           "status": 400
         }
@@ -1509,7 +1509,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.260712085000705,
+      "journey_seconds": 0.25341413996648043,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1522,8 +1522,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "2ba20c2620cfeb00f9f97b2236396ada280f5a6349d1bfefa28fadfd3e1f80a6",
-          "draft_id": "e8eee25eba6a45f9ac37feab3487ddca",
+          "binding": "20f213b21f7818227e26230811ce1b4846138903d8350c68ca4d39d8086f74f9",
+          "draft_id": "b89b290596114859b9cb70a7756c267c",
           "revision": 1,
           "status": 400
         }
@@ -1539,7 +1539,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.24847118600155227,
+      "journey_seconds": 0.23641228902852163,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1552,8 +1552,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "17a4e0c4542e84e338e2da256c0b3c3fa48471dca7709f28c4e1d53ecf68e93f",
-          "draft_id": "c514a2c164ce4df49ded049d8e973e84",
+          "binding": "83cc19076fd2dd34ecdba034f8ccc117e9ae507ed2ad23e3076770d58ce1c584",
+          "draft_id": "b18bc69ed1414a55aa820b101d567940",
           "revision": 1,
           "status": 400
         }
@@ -1569,7 +1569,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.24704206400201656,
+      "journey_seconds": 0.26389638800174,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1582,8 +1582,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "9e8a6f444ca80bcb9cb972f48856333b127192996493685d36e285b2bf912030",
-          "draft_id": "57caed6dd2804d088f95e0a1ee7b96de",
+          "binding": "9c92df8c1c70cd6fcc82f991a91f8e2f4e8444b0d46fbd41543c5f9b4cf38572",
+          "draft_id": "ac63b26ec8364c0389329247450b4d01",
           "revision": 1,
           "status": 400
         }
@@ -1599,7 +1599,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.22719187298207544,
+      "journey_seconds": 0.26314662297954783,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1612,22 +1612,22 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "8eab8b53562ae84dce2181878279cfda2b8df052e790f8c71d66a61965ba2c51",
-          "draft_id": "f3f5d3f719b14f75a9a0341fc01839e3",
+          "binding": "fe520a4d6141573d668eae4bf674a34cc7cf23e5d5d342ba664e4256ed30e97b",
+          "draft_id": "3a16c38a1a8e4d2185202cbbd598ed6e",
           "revision": 1,
           "status": 200
         },
         {
           "action": "intake",
-          "binding": "8eab8b53562ae84dce2181878279cfda2b8df052e790f8c71d66a61965ba2c51",
-          "draft_id": "f3f5d3f719b14f75a9a0341fc01839e3",
+          "binding": "fe520a4d6141573d668eae4bf674a34cc7cf23e5d5d342ba664e4256ed30e97b",
+          "draft_id": "3a16c38a1a8e4d2185202cbbd598ed6e",
           "revision": 1,
           "status": 200,
           "submission": {
             "duplicate": false,
             "invoice_ref": "Inv-0010",
             "made_current": true,
-            "submission_id": "9c67fe15b73e49ccacb4466f4c77b8b6",
+            "submission_id": "0dd752667c3742e68ed8e23de1c6848b",
             "version": 1
           }
         },
@@ -1635,8 +1635,8 @@
           "action": "checks",
           "case_created": false,
           "case_id": null,
-          "report_id": "ea5f325b58984e088472fee8ef1c918c",
-          "run_id": "1b9f6e85e7904ac89ad7c14f12bc9a51",
+          "report_id": "7976b610db014392b34aa1b4618bf73f",
+          "run_id": "512502e2afd04788ad484ffd9bd7f632",
           "status": "pass"
         }
       ],
@@ -1671,7 +1671,7 @@
         }
       },
       "fields_agree": true,
-      "journey_seconds": 0.2768707990180701,
+      "journey_seconds": 0.32552451494848356,
       "outcome": "no_case",
       "review_seconds": null
     },
@@ -1684,8 +1684,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "f615395edfc1f43879f3460dc8778c4b5f2656c092f6ae353a89ae783e50a3ab",
-          "draft_id": "f60f6c5d0f8648babd7455aa66d4d96c",
+          "binding": "bd05faea6915e08e5ac6045d1f822f6e0ebd56427840157d8f86b2fd049c6b15",
+          "draft_id": "b7ca79ed1ff343dc8f101d92eb92a23e",
           "revision": 1,
           "status": 400
         }
@@ -1701,7 +1701,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.2450772269803565,
+      "journey_seconds": 0.29458822100423276,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1714,8 +1714,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "7f1442a8de334ea619b11ebaf067346f0ff0f42ceac37ac31641801e9573d7b8",
-          "draft_id": "8f7b34329421497e87393dc35dc9c202",
+          "binding": "78a1f06e7188d15f3da0e0e99dac7ccee29a1b91a774fea71fda00273b3ed59c",
+          "draft_id": "720aafb9418f474da19a86ce78cb4dc4",
           "revision": 1,
           "status": 400
         }
@@ -1731,7 +1731,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.2486213040247094,
+      "journey_seconds": 0.28334970597643405,
       "outcome": "refused",
       "review_seconds": null
     },
@@ -1744,8 +1744,8 @@
       "events": [
         {
           "action": "confirm",
-          "binding": "e7691775d4b84152fdc74896b48dfcec2d9ec4d718d8b4ba7f996b231a52b36c",
-          "draft_id": "1a58c0c2ed34412b83d186c70b2a72cc",
+          "binding": "6a07d5d6c0221bc3c26adab0bd83e8979a18e79f30040b5dbb6755130efbe48a",
+          "draft_id": "d2ae6c40e4264810b4c53ae3b4deb9cc",
           "revision": 1,
           "status": 400
         }
@@ -1761,7 +1761,7 @@
       ],
       "fields": null,
       "fields_agree": false,
-      "journey_seconds": 0.2544667980109807,
+      "journey_seconds": 0.2676094209891744,
       "outcome": "refused",
       "review_seconds": null
     }
@@ -1880,5 +1880,5 @@
       }
     }
   },
-  "workflow_code_sha256": "280a84769548b52cd630f8d67f525a00dd072aa1378f00e89dc2abb8b186a411"
+  "workflow_code_sha256": "124aba0772691e87b7785838ee0745b53da10cc3115e37275899a152b620ba80"
 }
