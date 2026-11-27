@@ -103,7 +103,7 @@ correction PDF, both saved outputs, final gold and exact extra-file hash invento
 format. Do not choose corrections from gold during replay or replace failures
 after seeing scores.
 
-The installed core is `5d602428a93e5eee733b4ed1ffd06af4cbba250b`, called in-process
+The installed core is `ba683bb8343803771599f4d4287205a9b31fff0a`, called in-process
 by the existing check path. Selected Airflow integration proof is separate from
 full Airflow release readiness (#12). Local software verification, independent
 review, publication, hosted acceptance and the presenter's own understanding are

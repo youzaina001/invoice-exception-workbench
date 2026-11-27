@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: youzaina001/airflow-dq-agent
-          ref: 5d602428a93e5eee733b4ed1ffd06af4cbba250b
+          ref: ba683bb8343803771599f4d4287205a9b31fff0a
           path: core
       - uses: actions/setup-python@v5
         with:
