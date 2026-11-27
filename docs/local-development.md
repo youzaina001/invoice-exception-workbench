@@ -81,8 +81,7 @@ Update imports from `ledgerlens` to `invoice_triage` and launch commands to
 `invoice_triage.app:app`. The old import name is not provided. Database schemas,
 existing data, runtime settings and shared database lock identifiers keep their
 existing values; renaming alone needs no database migration. The PDF review
-feature adds local tables through the existing setup path. Historical verification
-records retain the name and paths used when they were captured.
+feature adds local tables through the existing setup path.
 
 ## Verification
 
@@ -101,6 +100,12 @@ system trust store for the test command:
 This does not disable certificate verification. Tests generate isolated database
 credentials and never need the demo's `.env` values.
 
-The [M1 review follow-up](review-follow-up.md) and
-[PR #1 handoff](pr1-handoff.md) are historical records. Current contributor
-checks and receipt requirements are in [verification and continuation](agents/verification.md).
+Pytest rejects a product package imported from another checkout before collecting
+tests. Its first output line identifies the interpreter, Invoice Triage source,
+Airflow core source, and core Git revision (or `unavailable` for an installation
+without Git metadata). Make additionally requires the selected `CORE` source.
+Direct pytest retains the product guard and reports the actual dependency; add
+`--core-checkout=/path/to/core` to require a particular core. Use the equals form
+so pytest can locate its configuration before parsing the extra option.
+For deliberate wheel or other installed-package testing, use `--installed-package`;
+the output labels that mode.

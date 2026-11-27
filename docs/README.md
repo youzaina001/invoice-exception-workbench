@@ -18,13 +18,4 @@ question you need to answer. Shell commands assume the repository root.
 
 - [Domain language](../CONTEXT.md)
 - [Hosted-services decision](adr/0001-select-hosted-services.md)
-- [Contributor verification](agents/verification.md)
-
-## Historical M1 review records
-
-These retain the revisions, results and limitations from that milestone.
-They do not describe the current publication or deployment state.
-
-- [PR #1 review](pr1-review.md)
-- [Review follow-up](review-follow-up.md)
-- [PR #1 handoff](pr1-handoff.md)
+- [Verification](local-development.md#verification)

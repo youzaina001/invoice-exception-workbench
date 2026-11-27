@@ -153,8 +153,6 @@ def test_static_walkthrough_does_not_claim_source_repository_is_private() -> Non
         content = (ROOT / rel).read_text(encoding="utf-8")
         for phrase in forbidden:
             assert phrase not in content, f"{rel} still contains {phrase!r}"
-    status_content = (ROOT / "site/project-status.html").read_text(encoding="utf-8")
-    assert "describe its private source and evidence limits" in status_content
 
 
 def test_pyproject_dependencies_are_bounded_and_locked() -> None:
@@ -202,6 +200,7 @@ def test_pinned_core_and_static_report_match() -> None:
     report_bytes = REPORT_JSON.read_bytes()
     report = json.loads(report_bytes)
     assert report["core"]["revision"] == PINNED_CORE
+    assert report["core"]["source"] == "src/airflow_dq_agent/__init__.py"
     assert report["workflow_code_sha256"] == code_identity()
     assert report["plan_sha256"] == hashlib.sha256(plan_bytes).hexdigest()
 

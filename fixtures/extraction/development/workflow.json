@@ -1,7 +1,7 @@
 {
   "version": "1",
-  "manifest_sha256": "d516d7989b8b980ca0fb8c321fabf30e33b4bbfa8fe913fca67c6d1f380bcfc2",
-  "code_sha256": "e04d809886d7973b8fa64435d297a105c643de92d0ec640944b143e71e2c552a",
+  "manifest_sha256": "f3dea9e1172575017fb518a17371085ae0b12be36e0f7ff18a4fb55d7417f405",
+  "code_sha256": "94b4609fae31ddbb6d4254897f7ef8dda1696ffb4cb3945d66be7e1b89383686",
   "core_revision": "ba683bb8343803771599f4d4287205a9b31fff0a",
   "policy": "confirm-unchanged-then-declared-source-replacement-v1",
   "expected": {

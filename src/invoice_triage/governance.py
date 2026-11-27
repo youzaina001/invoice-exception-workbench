@@ -369,4 +369,8 @@ def core_identity(pinned_revision: str) -> dict[str, str]:
     )
     if dirty.stdout:
         raise ValueError("pinned core has tracked changes")
-    return {"source": str(origin), "revision": head, "call": "in-process run_suite"}
+    return {
+        "source": origin.relative_to(Path(root)).as_posix(),
+        "revision": head,
+        "call": "in-process run_suite",
+    }

@@ -43,7 +43,7 @@ make check CORE=/path/to/airflow-dq-agent
 ```
 
 The suite uses real PostgreSQL, Chromium and the installed core. Setup and checks
-must select the same core checkout. See [verification](docs/agents/verification.md).
+must select the same core checkout. See [verification](docs/local-development.md#verification).
 
 ## Boundaries
 
@@ -62,7 +62,7 @@ The repository name remains `invoice-exception-workbench`.
 
 | Guide | Details |
 | --- | --- |
-| [Documentation index](docs/README.md) | Navigation, domain terms and historical records |
+| [Documentation index](docs/README.md) | Navigation and domain terms |
 | [Local development](docs/local-development.md) | Setup, upgrades, supported core and environment settings |
 | [PDF review](docs/pdf-review.md) | Confirmation, correction, resolution and extraction limits |
 | [Architecture](docs/architecture.md) | Data flow, restricted roles and evidence binding |

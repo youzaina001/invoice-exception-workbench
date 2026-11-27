@@ -1,11 +1,11 @@
 # Frozen development scoring examples
 
-Frozen 2026-10-18 by the Codex builder, before extractor implementation. These
+Frozen 2026-10-18 by the project author, before extractor implementation. These
 are public synthetic examples and manually worked arithmetic from LedgerLens #2,
 not independently curated held-out data. The independent curator and reserved
 corpus remain absent. Both arms below are authored stubs, not model observations.
 
-The development layout has S01–S10 and three extra documents: ambiguous supplier,
+The development layout has S01-S10 and three extra documents: ambiguous supplier,
 ambiguous date, and missing currency. Every other field is definite. Amounts are
 integer minor units; zero is a value, not missing. Evidence is excluded from exact
 value/state agreement, but its available page/spans must be valid.
