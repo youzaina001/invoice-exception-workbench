@@ -25,6 +25,15 @@ jobs:
         with:
           python-version: '3.12'
       - uses: astral-sh/setup-uv@v6
+      - name: Public repository hygiene
+        working-directory: workbench
+        run: |
+          bad=$(git ls-files | grep -E '(^|/)AGENTS\.md$|^docs/agents/|(^|/)pr[0-9]+-(handoff|review)\.md$|(^|/)review-follow-up\.md$|(^|/).*-handoff\.md$' || true)
+          if [ -n "$bad" ]; then
+            echo "Forbidden internal agent/handoff files tracked:" >&2
+            echo "$bad" >&2
+            exit 1
+          fi
       - name: Install workbench and supported core
         working-directory: workbench
         run: make setup CORE="$GITHUB_WORKSPACE/core"
