@@ -8,7 +8,7 @@ PostgreSQL is supplied by `pgserver`; Chromium is required for browser tests.
 
 ## Tested core revision
 
-- CI selects core commit `5d602428a93e5eee733b4ed1ffd06af4cbba250b` explicitly.
+- CI selects core commit `ba683bb8343803771599f4d4287205a9b31fff0a` explicitly.
   The original M1 evidence used `0371013` (merge PR #94).
 - Repro: check out the supported revision in your chosen core directory, then
   run `make setup CORE=/path/to/core` and `make check CORE=/path/to/core`.

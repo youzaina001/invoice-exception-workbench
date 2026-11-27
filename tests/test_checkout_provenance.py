@@ -185,7 +185,7 @@ def test_pinned_core_and_static_report_match() -> None:
 
     from invoice_triage.workflow_replay import PINNED_CORE, Plan, code_identity
 
-    assert PINNED_CORE == "5d602428a93e5eee733b4ed1ffd06af4cbba250b"
+    assert PINNED_CORE == "ba683bb8343803771599f4d4287205a9b31fff0a"
 
     workflow_yml = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert re.search(rf"^\s*ref:\s*{PINNED_CORE}\s*$", workflow_yml, re.MULTILINE)

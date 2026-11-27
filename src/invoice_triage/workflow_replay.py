@@ -29,7 +29,7 @@ from invoice_triage.governance import (
 )
 
 POLICY = "confirm-unchanged-then-declared-source-replacement-v1"
-PINNED_CORE = "5d602428a93e5eee733b4ed1ffd06af4cbba250b"
+PINNED_CORE = "ba683bb8343803771599f4d4287205a9b31fff0a"
 
 
 def sha(data: bytes) -> str:
@@ -58,7 +58,7 @@ class Plan(StrictModel):
     version: Literal["1"]
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     code_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    core_revision: Literal["5d602428a93e5eee733b4ed1ffd06af4cbba250b"]
+    core_revision: Literal["ba683bb8343803771599f4d4287205a9b31fff0a"]
     policy: Literal["confirm-unchanged-then-declared-source-replacement-v1"]
     expected: dict[str, Literal["refused", "no_case", "open", "resolved"]]
     corrections: dict[str, Correction]

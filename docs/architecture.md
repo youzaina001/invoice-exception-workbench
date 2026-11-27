@@ -4,7 +4,7 @@
 
 LedgerLens is the portfolio name for Invoice Triage, the workbench in
 `invoice-exception-workbench`. CI pins the Airflow governance core to
-`5d602428a93e5eee733b4ed1ffd06af4cbba250b`. See
+`ba683bb8343803771599f4d4287205a9b31fff0a`. See
 [local development](local-development.md#tested-core-revision) for setup.
 
 ```text
