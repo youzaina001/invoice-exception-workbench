@@ -138,7 +138,7 @@ rows. Runtime roles receive no direct UPDATE/DELETE grant on audit tables;
 `dq_audit` remains append-only. The database owner can inspect every workspace
 and retained historical attempt for maintenance. No hosted deployment is claimed.
 
-See [verification and continuation](agents/verification.md) for source checks
-and retained receipts. [Domain terms](../CONTEXT.md) and the
+See [verification](local-development.md#verification) for source checks.
+[Domain terms](../CONTEXT.md) and the
 [accepted hosted-services plan](adr/0001-select-hosted-services.md) name the
 hosted demonstration. No hosted deployment is claimed.
